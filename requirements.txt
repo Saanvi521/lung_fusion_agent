@@ -1,0 +1,10 @@
+numpy
+pandas
+scikit-learn
+scikit-image
+scipy
+pillow
+torch
+timm>=0.9.11
+transformers>=4.51
+huggingface_hub
