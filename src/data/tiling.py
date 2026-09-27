@@ -20,7 +20,7 @@ DOWNSAMPLE_FACTOR = 4  # 80x -> 20x
 TILE_SIZE = 224
 STRIDE = 224  # non-overlapping; set < TILE_SIZE for overlap
 MIN_TISSUE_FRACTION = 0.5
-MAX_TILES_PER_SLIDE = 500  # compute cap; document this choice in the report
+MAX_TILES_PER_SLIDE = 1000  # compute cap; document this choice in the report
 
 
 @dataclass
@@ -31,13 +31,32 @@ class Tile:
 
 
 def load_and_downsample(image_path: Path) -> np.ndarray:
-    img = Image.open(image_path)
-    w, h = img.size
-    target_size = (w // DOWNSAMPLE_FACTOR, h // DOWNSAMPLE_FACTOR)
+    """Load a slide JPG and resize 80x -> 20x (4x linear downsample).
 
-    img.draft("RGB", target_size)   # <-- the fix: decode at reduced scale
-    img = img.convert("RGB")
-    img = img.resize(target_size, Image.LANCZOS)
+    Uses PIL's JPEG "draft" mode: this tells the JPEG decoder to decode
+    directly at a reduced resolution (JPEG's format natively supports this,
+    in power-of-2 steps), instead of fully decoding the image at full
+    resolution and THEN shrinking it. A naive Image.open(...).convert("RGB")
+    on an 80x gigapixel slide can balloon to 8-15GB in decoded memory before
+    we ever get to resize it -- easily enough to OOM a free Colab session.
+    draft() avoids ever materializing that full-size array at all.
+    """
+    img = Image.open(image_path)
+    orig_w, orig_h = img.size
+    target_w, target_h = orig_w // DOWNSAMPLE_FACTOR, orig_h // DOWNSAMPLE_FACTOR
+
+    # Ask the decoder to get close to our target for free, during decode
+    # itself (nearest power-of-2 downscale JPEG supports natively).
+    img.draft("RGB", (target_w, target_h))
+    img = img.convert("RGB")  # decodes NOW, but only at the small drafted size
+
+    # draft() only gets us to the NEAREST power-of-2 factor (1/2, 1/4, 1/8...),
+    # which may not be exactly our target. One final precise resize gets us
+    # to the exact target size -- but this resize is now cheap, since the
+    # image is already small going in.
+    if img.size != (target_w, target_h):
+        img = img.resize((target_w, target_h), Image.LANCZOS)
+
     return np.array(img)
 
 
