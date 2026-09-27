@@ -1,0 +1,49 @@
+{
+  "seed": 42,
+  "n_slides_raw": 408,
+  "n_patients": 209,
+  "split_counts": {
+    "train": 146,
+    "test": 42,
+    "val": 21
+  },
+  "subtype_by_split": {
+    "test": {
+      "Acinar": 7,
+      "Cribriform": 3,
+      "In situ": 9,
+      "Lepidic": 4,
+      "Micropapillary": 5,
+      "Papillary": 8,
+      "Solid": 6
+    },
+    "train": {
+      "Acinar": 23,
+      "Cribriform": 11,
+      "In situ": 31,
+      "Lepidic": 15,
+      "Micropapillary": 18,
+      "Papillary": 28,
+      "Solid": 20
+    },
+    "val": {
+      "Acinar": 3,
+      "Cribriform": 1,
+      "In situ": 5,
+      "Lepidic": 2,
+      "Micropapillary": 3,
+      "Papillary": 4,
+      "Solid": 3
+    }
+  },
+  "n_label_conflict_patients": 5,
+  "input_csv_sha256": "298e8f4240b5a5bb1e2c5e4d9f32f58c6a3bb657ae7b8aa3462b8b76cfb4e7a1",
+  "selection_rule": "lowest numeric WSI_ID per SampleNumber",
+  "duplicate_id_policy": "grouped by SampleNumber string, so repeated IDs merge into one patient",
+  "label_policy": "label of the selected slide; conflicts flagged in label_conflict",
+  "selection_bias_check": {
+    "n_multi_slide_patients": 146,
+    "n_selected_matches_majority": 143,
+    "agreement_rate": 0.979
+  }
+}
