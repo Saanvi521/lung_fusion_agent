@@ -29,7 +29,7 @@ from sklearn.model_selection import train_test_split
 
 TEST_FRAC = 0.20
 VAL_FRAC = 0.10  # fraction of the WHOLE set
-LABEL_COL = "Tumor Subtype"
+LABEL_COL = "Benchmark_Label_7class"
 GROUP_COL = "SampleNumber"
 
 
