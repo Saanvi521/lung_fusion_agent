@@ -31,11 +31,13 @@ class Tile:
 
 
 def load_and_downsample(image_path: Path) -> np.ndarray:
-    """Load a slide JPG and resize 80x -> 20x (4x linear downsample)."""
-    img = Image.open(image_path).convert("RGB")
+    img = Image.open(image_path)
     w, h = img.size
-    new_size = (w // DOWNSAMPLE_FACTOR, h // DOWNSAMPLE_FACTOR)
-    img = img.resize(new_size, Image.LANCZOS)
+    target_size = (w // DOWNSAMPLE_FACTOR, h // DOWNSAMPLE_FACTOR)
+
+    img.draft("RGB", target_size)   # <-- the fix: decode at reduced scale
+    img = img.convert("RGB")
+    img = img.resize(target_size, Image.LANCZOS)
     return np.array(img)
 
 
