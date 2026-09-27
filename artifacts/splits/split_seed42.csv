@@ -1,0 +1,210 @@
+patient_id,wsi_id,subtype,age,sex,diagnosis,n_slides_available,label_conflict,split
+8007623,WSI-369,Acinar,55,Male,invasive adenocarcinoma (IA),1,False,train
+8008524,WSI-361,Solid,54,Female,invasive adenocarcinoma (IA),1,False,train
+8013888,WSI-255,Solid,63,Female,invasive adenocarcinoma (IA),3,False,train
+8017082,WSI-265,Papillary,63,Female,invasive adenocarcinoma (IA),2,False,train
+8020981,WSI-392,In situ,36,Female,Adenocarcinoma in situ(AIS),1,False,val
+8022410,WSI-71,In situ,31,Female,Adenocarcinoma in situ(AIS),2,False,test
+8029758,WSI-105,Cribriform,55,Female,invasive adenocarcinoma (IA),2,False,train
+8030821,WSI-33,In situ,34,Female,Adenocarcinoma in situ(AIS),2,False,train
+8060308,WSI-213,Papillary,68,Male,invasive adenocarcinoma (IA),4,False,train
+8103477,WSI-97,Papillary,47,Female,invasive adenocarcinoma (IA),1,False,train
+8111526,WSI-232,Solid,47,Female,invasive adenocarcinoma (IA),3,False,test
+8126701,WSI-264,Cribriform,67,Male,invasive adenocarcinoma (IA),1,False,train
+8133249,WSI-21,In situ,56,Female,Adenocarcinoma in situ(AIS),2,False,test
+8143088,WSI-378,In situ,56,Female,Adenocarcinoma in situ(AIS),1,False,train
+8146413,WSI-286,Acinar,74,Male,invasive adenocarcinoma (IA),2,False,train
+8163836,WSI-341,Lepidic,54,Male,invasive adenocarcinoma (IA),2,False,train
+8170462,WSI-346,Lepidic,45,Female,invasive adenocarcinoma (IA),1,False,train
+8180155,WSI-331,Micropapillary,65,Male,invasive adenocarcinoma (IA),3,False,train
+8189481,WSI-55,In situ,47,Female,Adenocarcinoma in situ(AIS),2,False,train
+8203346,WSI-196,Cribriform,71,Male,invasive adenocarcinoma (IA),2,False,val
+8215472,WSI-384,In situ,53,Male,Adenocarcinoma in situ(AIS),2,False,test
+8219606,WSI-343,Lepidic,75,Female,minimally invasive adenocarcinoma (MIA),1,False,train
+8221926,WSI-344,Lepidic,65,Male,invasive adenocarcinoma (IA),1,False,train
+8221946,WSI-350,Lepidic,60,Male,invasive adenocarcinoma (IA),1,False,train
+8223039,WSI-345,In situ,53,Female,Adenocarcinoma in situ(AIS),1,False,train
+8224566,WSI-363,Acinar,46,Male,invasive adenocarcinoma (IA),1,False,train
+8225155,WSI-349,Acinar,47,Female,invasive adenocarcinoma (IA),1,False,val
+8225322,WSI-347,Lepidic,67,Female,invasive adenocarcinoma (IA),2,True,train
+8225911,WSI-353,In situ,49,Female,Adenocarcinoma in situ(AIS),1,False,test
+8226738,WSI-351,Acinar,42,Female,invasive adenocarcinoma (IA),1,False,train
+8227276,WSI-355,Acinar,45,Female,invasive adenocarcinoma (IA),1,False,train
+8227640,WSI-358,In situ,46,Female,Adenocarcinoma in situ(AIS),1,False,train
+8227741,WSI-354,Acinar,56,Female,invasive adenocarcinoma (IA),1,False,test
+8227980,WSI-352,Acinar,50,Female,invasive adenocarcinoma (IA),1,False,test
+8228355,WSI-356,Papillary,56,Female,invasive adenocarcinoma (IA),1,False,train
+8228780,WSI-357,In situ,44,Female,Adenocarcinoma in situ(AIS),1,False,train
+8229292,WSI-359,In situ,36,Female,Adenocarcinoma in situ(AIS),1,False,train
+8231081,WSI-375,Cribriform,57,Male,invasive adenocarcinoma (IA),1,False,train
+8234200,WSI-371,Acinar,65,Male,invasive adenocarcinoma (IA),1,False,val
+8234694,WSI-360,Acinar,39,Female,invasive adenocarcinoma (IA),1,False,train
+8237784,WSI-364,Lepidic,53,Female,minimally invasive adenocarcinoma (MIA),1,False,train
+8238261,WSI-366,Acinar,47,Female,invasive adenocarcinoma (IA),1,False,test
+8238589,WSI-365,Acinar,51,Female,invasive adenocarcinoma (IA),1,False,train
+8238702,WSI-362,In situ,56,Female,Adenocarcinoma in situ(AIS),1,False,train
+8239884,WSI-367,Papillary,52,Male,invasive adenocarcinoma (IA),2,False,train
+8240634,WSI-372,Acinar,54,Female,invasive adenocarcinoma (IA),2,True,train
+8242401,WSI-370,Lepidic,57,Female,invasive adenocarcinoma (IA),1,False,train
+8243660,WSI-376,Acinar,65,Female,invasive adenocarcinoma (IA),1,False,train
+8243928,WSI-377,Solid,50,Male,invasive adenocarcinoma (IA),1,False,val
+8243986,WSI-374,In situ,50,Female,Adenocarcinoma in situ(AIS),1,False,test
+8244091,WSI-403,Acinar,52,Male,invasive adenocarcinoma (IA),1,False,test
+8245273,WSI-388,In situ,44,Female,Adenocarcinoma in situ(AIS),1,False,train
+8245910,WSI-386,Acinar,51,Female,invasive adenocarcinoma (IA),1,False,train
+8245975,WSI-380,Acinar,60,Male,invasive adenocarcinoma (IA),2,True,train
+8246145,WSI-383,In situ,45,Female,Adenocarcinoma in situ(AIS),1,False,val
+8246209,WSI-387,In situ,54,Female,Adenocarcinoma in situ(AIS),1,False,train
+8246451,WSI-393,Acinar,52,Female,invasive adenocarcinoma (IA),1,False,train
+8246533,WSI-382,Papillary,54,Female,invasive adenocarcinoma (IA),1,False,train
+8246551,WSI-379,In situ,49,Female,Adenocarcinoma in situ(AIS),1,False,train
+8246791,WSI-389,Lepidic,51,Female,invasive adenocarcinoma (IA),1,False,test
+8248340,WSI-391,Lepidic,57,Female,minimally invasive adenocarcinoma (MIA),1,False,train
+8248357,WSI-390,Lepidic,44,Male,minimally invasive adenocarcinoma (MIA),1,False,train
+8248415,WSI-398,Lepidic,49,Female,minimally invasive adenocarcinoma (MIA),2,True,train
+8248702,WSI-400,Acinar,53,Female,invasive adenocarcinoma (IA),1,False,train
+8248805,WSI-401,Lepidic,46,Female,invasive adenocarcinoma (IA),2,True,test
+8248854,WSI-396,Lepidic,54,Female,invasive adenocarcinoma (IA),1,False,train
+8249894,WSI-404,In situ,61,Female,Adenocarcinoma in situ(AIS),1,False,train
+8249974,WSI-397,Acinar,27,Female,minimally invasive adenocarcinoma (MIA),1,False,train
+8250047,WSI-407,In situ,43,Female,Adenocarcinoma in situ(AIS),1,False,test
+8250185,WSI-394,Acinar,49,Male,invasive adenocarcinoma (IA),2,False,test
+8250390,WSI-405,Solid,49,Female,invasive adenocarcinoma (IA),1,False,train
+8250645,WSI-194,Micropapillary,47,Female,invasive adenocarcinoma (IA),2,False,train
+8251032,WSI-408,Micropapillary,49,Female,invasive adenocarcinoma (IA),1,False,train
+8251346,WSI-406,In situ,62,Male,Adenocarcinoma in situ(AIS),1,False,train
+8275340,WSI-112,Papillary,71,Male,invasive adenocarcinoma (IA),2,False,train
+8276073,WSI-160,Solid,59,Female,invasive adenocarcinoma (IA),3,False,train
+8280993,WSI-116,Cribriform,67,Female,invasive adenocarcinoma (IA),2,False,train
+8322782,WSI-107,Solid,66,Male,invasive adenocarcinoma (IA),2,False,test
+8328230,WSI-7,In situ,46,Female,Adenocarcinoma in situ(AIS),2,False,train
+8337687,WSI-67,In situ,45,Female,Adenocarcinoma in situ(AIS),2,False,train
+8340298,WSI-3,In situ,51,Male,Adenocarcinoma in situ(AIS),2,False,train
+8342197,WSI-174,Papillary,50,Female,invasive adenocarcinoma (IA),3,False,train
+8355990,WSI-288,Acinar,69,Female,invasive adenocarcinoma (IA),2,False,train
+8365118,WSI-9,In situ,30,Female,Adenocarcinoma in situ(AIS),2,False,test
+8373873,WSI-1,In situ,48,Female,Adenocarcinoma in situ(AIS),2,False,test
+8373888,WSI-13,In situ,52,Male,Adenocarcinoma in situ(AIS),3,False,val
+8374253,WSI-11,In situ,40,Female,Adenocarcinoma in situ(AIS),2,False,test
+8374273,WSI-5,In situ,53,Female,Adenocarcinoma in situ(AIS),2,False,train
+8375043,WSI-193,Solid,57,Male,invasive adenocarcinoma (IA),1,False,train
+8375372,WSI-16,Cribriform,70,Female,invasive adenocarcinoma (IA),3,False,train
+8377498,WSI-19,In situ,46,Female,Adenocarcinoma in situ(AIS),2,False,train
+8377886,WSI-35,Papillary,68,Female,invasive adenocarcinoma (IA),4,False,test
+8377922,WSI-25,In situ,42,Female,Adenocarcinoma in situ(AIS),2,False,train
+8378183,WSI-23,In situ,49,Female,Adenocarcinoma in situ(AIS),2,False,train
+8378244,WSI-27,In situ,44,Female,Adenocarcinoma in situ(AIS),2,False,train
+8378774,WSI-31,Acinar,54,Male,invasive adenocarcinoma (IA),2,False,train
+8378935,WSI-29,In situ,69,Female,Adenocarcinoma in situ(AIS),2,False,val
+8380032,WSI-37,In situ,62,Male,Adenocarcinoma in situ(AIS),2,False,train
+8380220,WSI-39,In situ,35,Male,Adenocarcinoma in situ(AIS),2,False,train
+8380598,WSI-77,Papillary,51,Male,invasive adenocarcinoma (IA),1,False,train
+8380665,WSI-41,Papillary,53,Female,invasive adenocarcinoma (IA),1,False,train
+8381104,WSI-42,In situ,37,Female,Adenocarcinoma in situ(AIS),2,False,train
+8381316,WSI-44,In situ,50,Female,Adenocarcinoma in situ(AIS),2,False,val
+8382068,WSI-46,In situ,35,Female,Adenocarcinoma in situ(AIS),2,False,train
+8383318,WSI-48,Solid,69,Male,invasive adenocarcinoma (IA),3,False,test
+8383378,WSI-64,In situ,59,Female,Adenocarcinoma in situ(AIS),2,False,train
+8383521,WSI-86,Solid,59,Male,invasive adenocarcinoma (IA),3,False,train
+8384436,WSI-51,In situ,35,Female,Adenocarcinoma in situ(AIS),4,False,train
+8384801,WSI-59,Cribriform,56,Male,invasive adenocarcinoma (IA),2,False,train
+8385282,WSI-63,Papillary,63,Female,invasive adenocarcinoma (IA),1,False,val
+8385363,WSI-57,In situ,59,Male,Adenocarcinoma in situ(AIS),2,False,train
+8385456,WSI-61,In situ,50,Female,Adenocarcinoma in situ(AIS),2,False,train
+8386141,WSI-190,Micropapillary,58,Male,invasive adenocarcinoma (IA),2,False,train
+8386241,WSI-66,Micropapillary,43,Male,invasive adenocarcinoma (IA),1,False,train
+8386342,WSI-69,In situ,35,Female,Adenocarcinoma in situ(AIS),2,False,train
+8387212,WSI-73,In situ,53,Male,Adenocarcinoma in situ(AIS),4,False,train
+8388318,WSI-78,Papillary,57,Male,invasive adenocarcinoma (IA),2,False,test
+8390717,WSI-80,Micropapillary,69,Male,invasive adenocarcinoma (IA),3,False,train
+8393154,WSI-83,Micropapillary,58,Female,invasive adenocarcinoma (IA),3,False,test
+8396592,WSI-89,Micropapillary,70,Male,invasive adenocarcinoma (IA),2,False,test
+8399843,WSI-93,Papillary,53,Male,invasive adenocarcinoma (IA),2,False,test
+8399864,WSI-95,Solid,75,Female,invasive adenocarcinoma (IA),2,False,train
+8400161,WSI-98,Papillary,59,Female,invasive adenocarcinoma (IA),2,False,test
+8400293,WSI-91,Papillary,46,Female,invasive adenocarcinoma (IA),2,False,train
+8402871,WSI-100,Solid,46,Male,invasive adenocarcinoma (IA),3,False,train
+8403108,WSI-127,Papillary,53,Male,invasive adenocarcinoma (IA),3,False,train
+8403576,WSI-109,Papillary,64,Female,invasive adenocarcinoma (IA),2,False,train
+8403586,WSI-122,Solid,53,Female,invasive adenocarcinoma (IA),5,False,test
+8404064,WSI-130,Solid,52,Female,invasive adenocarcinoma (IA),2,False,train
+8404220,WSI-114,Micropapillary,62,Female,invasive adenocarcinoma (IA),2,False,test
+8404326,WSI-111,Papillary,74,Female,invasive adenocarcinoma (IA),1,False,train
+8404498,WSI-120,Papillary,54,Male,invasive adenocarcinoma (IA),2,False,val
+8405402,WSI-118,Papillary,70,Female,invasive adenocarcinoma (IA),2,False,train
+8406776,WSI-135,Solid,60,Male,invasive adenocarcinoma (IA),2,False,val
+8406914,WSI-132,Solid,62,Male,invasive adenocarcinoma (IA),3,False,train
+8407538,WSI-145,Solid,24,Female,invasive adenocarcinoma (IA),2,False,train
+8407602,WSI-137,Solid,50,Male,invasive adenocarcinoma (IA),1,False,train
+8408447,WSI-138,Papillary,60,Female,invasive adenocarcinoma (IA),2,False,train
+8408497,WSI-140,Papillary,66,Male,invasive adenocarcinoma (IA),3,False,train
+8410228,WSI-143,Solid,59,Male,invasive adenocarcinoma (IA),2,False,train
+8411469,WSI-169,Micropapillary,57,Male,invasive adenocarcinoma (IA),3,False,train
+8412818,WSI-147,Micropapillary,58,Male,invasive adenocarcinoma (IA),3,False,train
+8413637,WSI-150,Micropapillary,62,Male,invasive adenocarcinoma (IA),2,False,train
+8414312,WSI-157,Solid,42,Male,invasive adenocarcinoma (IA),3,False,test
+8414703,WSI-152,Papillary,67,Female,invasive adenocarcinoma (IA),2,False,train
+8415370,WSI-154,Micropapillary,59,Female,invasive adenocarcinoma (IA),3,False,train
+8416065,WSI-248,Papillary,70,Female,invasive adenocarcinoma (IA),2,False,train
+8417145,WSI-166,Micropapillary,50,Female,invasive adenocarcinoma (IA),3,False,val
+8417654,WSI-163,Solid,43,Male,invasive adenocarcinoma (IA),3,False,val
+8418084,WSI-172,Papillary,49,Female,invasive adenocarcinoma (IA),2,False,test
+8419053,WSI-177,Solid,73,Male,invasive adenocarcinoma (IA),2,False,train
+8420384,WSI-220,Papillary,62,Female,invasive adenocarcinoma (IA),2,False,test
+8422802,WSI-180,Papillary,73,Male,invasive adenocarcinoma (IA),2,False,train
+8422879,WSI-179,Solid,51,Male,invasive adenocarcinoma (IA),1,False,train
+8423960,WSI-188,Micropapillary,41,Female,invasive adenocarcinoma (IA),2,False,train
+8424483,WSI-186,Solid,56,Male,invasive adenocarcinoma (IA),2,False,train
+8424691,WSI-182,Papillary,59,Female,invasive adenocarcinoma (IA),2,False,train
+8424956,WSI-192,Papillary,59,Female,invasive adenocarcinoma (IA),1,False,train
+8425512,WSI-184,Papillary,64,Female,invasive adenocarcinoma (IA),2,False,train
+8425534,WSI-222,Papillary,65,Female,invasive adenocarcinoma (IA),2,False,val
+8427889,WSI-211,Cribriform,40,Male,invasive adenocarcinoma (IA),2,False,train
+8428475,WSI-200,Cribriform,49,Female,invasive adenocarcinoma (IA),2,False,train
+8429439,WSI-198,Micropapillary,55,Male,invasive adenocarcinoma (IA),2,False,train
+8430453,WSI-202,Micropapillary,44,Female,invasive adenocarcinoma (IA),2,False,val
+8430989,WSI-204,Solid,57,Female,invasive adenocarcinoma (IA),3,False,test
+8431695,WSI-207,Solid,57,Female,invasive adenocarcinoma (IA),2,False,train
+8432886,WSI-209,Papillary,52,Male,invasive adenocarcinoma (IA),2,False,train
+8435204,WSI-227,Cribriform,72,Female,invasive adenocarcinoma (IA),3,False,test
+8435688,WSI-224,Solid,66,Male,invasive adenocarcinoma (IA),3,False,train
+8436038,WSI-217,Papillary,50,Female,invasive adenocarcinoma (IA),3,False,train
+8436460,WSI-241,Solid,66,Female,invasive adenocarcinoma (IA),3,False,train
+8439102,WSI-230,Micropapillary,73,Female,invasive adenocarcinoma (IA),2,False,val
+8441170,WSI-238,Micropapillary,53,Male,invasive adenocarcinoma (IA),3,False,train
+8441492,WSI-267,Cribriform,62,Male,invasive adenocarcinoma (IA),2,False,train
+8441511,WSI-235,Cribriform,80,Male,invasive adenocarcinoma (IA),3,False,test
+8442830,WSI-258,Micropapillary,53,Male,invasive adenocarcinoma (IA),3,False,train
+8444525,WSI-245,Cribriform,66,Female,invasive adenocarcinoma (IA),3,False,train
+8445196,WSI-244,Cribriform,66,Male,invasive adenocarcinoma (IA),1,False,test
+8445479,WSI-250,Papillary,63,Female,invasive adenocarcinoma (IA),3,False,train
+8446030,WSI-261,Solid,58,Female,invasive adenocarcinoma (IA),3,False,train
+8446426,WSI-253,Micropapillary,57,Female,invasive adenocarcinoma (IA),2,False,train
+8447059,WSI-300,Acinar,58,Female,invasive adenocarcinoma (IA),2,False,train
+8448471,WSI-269,Papillary,50,Male,invasive adenocarcinoma (IA),2,False,test
+8449479,WSI-271,Papillary,59,Male,invasive adenocarcinoma (IA),2,False,train
+8452560,WSI-273,Cribriform,72,Male,invasive adenocarcinoma (IA),2,False,train
+8494497,WSI-275,Acinar,62,Female,invasive adenocarcinoma (IA),2,False,val
+8495518,WSI-277,Micropapillary,52,Male,invasive adenocarcinoma (IA),3,False,train
+8495760,WSI-280,Acinar,44,Male,invasive adenocarcinoma (IA),2,False,train
+8505034,WSI-320,Acinar,60,Female,invasive adenocarcinoma (IA),2,False,train
+8509161,WSI-308,Lepidic,64,Female,invasive adenocarcinoma (IA),2,False,test
+8514715,WSI-282,Acinar,60,Male,invasive adenocarcinoma (IA),2,False,train
+8520787,WSI-284,Lepidic,59,Male,invasive adenocarcinoma (IA),2,False,val
+8532614,WSI-290,Acinar,72,Female,invasive adenocarcinoma (IA),2,False,test
+8532866,WSI-292,Papillary,71,Female,invasive adenocarcinoma (IA),3,False,train
+8533034,WSI-295,Lepidic,73,Female,invasive adenocarcinoma (IA),2,False,train
+8534227,WSI-304,Acinar,44,Female,invasive adenocarcinoma (IA),4,False,train
+8534345,WSI-297,Papillary,79,Female,invasive adenocarcinoma (IA),3,False,test
+8536033,WSI-302,Micropapillary,67,Male,invasive adenocarcinoma (IA),2,False,train
+8539620,WSI-310,Acinar,53,Female,invasive adenocarcinoma (IA),1,False,train
+8540568,WSI-318,Lepidic,58,Male,invasive adenocarcinoma (IA),2,False,train
+8542525,WSI-311,Lepidic,50,Male,invasive adenocarcinoma (IA),2,False,val
+8543369,WSI-313,Acinar,60,Female,invasive adenocarcinoma (IA),2,False,train
+8547959,WSI-315,Lepidic,58,Female,invasive adenocarcinoma (IA),3,False,train
+8551092,WSI-327,Micropapillary,51,Female,invasive adenocarcinoma (IA),2,False,train
+8551431,WSI-322,Micropapillary,56,Male,invasive adenocarcinoma (IA),3,False,test
+8551521,WSI-325,Lepidic,55,Female,invasive adenocarcinoma (IA),2,False,test
+8552577,WSI-329,Acinar,70,Male,invasive adenocarcinoma (IA),2,False,test
+8553258,WSI-336,Micropapillary,55,Male,invasive adenocarcinoma (IA),5,False,test
+8555105,WSI-334,Papillary,48,Female,invasive adenocarcinoma (IA),2,False,val
