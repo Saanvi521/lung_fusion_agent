@@ -77,6 +77,7 @@ def main() -> None:
     ap.add_argument("--repo-id", default="kmmuleelab/Lung_Pathology_Image_JPG")
     ap.add_argument("--out-dir", type=Path, default=Path("artifacts/embeddings"))
     ap.add_argument("--tmp-dir", type=Path, default=Path("/content/tmp_slides"))
+    ap.add_argument("--models", nargs="+", default=MODEL_NAMES, choices=MODEL_NAMES)
     args = ap.parse_args()
 
     patients = pd.read_csv(args.split)
@@ -89,7 +90,7 @@ def main() -> None:
     stats: dict = {}
     t_total_start = time.time()
 
-    for model_name in MODEL_NAMES:
+    for model_name in args.models:
         cache_dir = args.out_dir / model_name
         cache_dir.mkdir(parents=True, exist_ok=True)
 

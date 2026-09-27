@@ -38,7 +38,7 @@ class TileEncoder(ABC):
         self.device = device
         self.model = self._load_model().to(device).eval()
         self.transform = self._build_transform()
-
+ 
     @torch.inference_mode()
     def embed_tiles(self, tiles: list[np.ndarray], batch_size: int = 64) -> np.ndarray:
         """Encode a list of (224, 224, 3) uint8 tile arrays -> (N, D) float32."""
@@ -46,7 +46,12 @@ class TileEncoder(ABC):
         for i in range(0, len(tiles), batch_size):
             batch = tiles[i : i + batch_size]
             x = torch.stack([self.transform(Image.fromarray(t)) for t in batch]).to(self.device)
-            feats = self._forward(x)
+            with torch.autocast(
+                device_type="cuda" if self.device == "cuda" else "cpu",
+                dtype=torch.float16,
+                enabled=(self.device == "cuda"),
+            ):
+                feats = self._forward(x)
             out.append(feats.float().cpu().numpy())
         return np.concatenate(out, axis=0) if out else np.zeros((0, self.embed_dim), dtype=np.float32)
 

@@ -20,7 +20,7 @@ DOWNSAMPLE_FACTOR = 4  # 80x -> 20x
 TILE_SIZE = 224
 STRIDE = 224  # non-overlapping; set < TILE_SIZE for overlap
 MIN_TISSUE_FRACTION = 0.5
-MAX_TILES_PER_SLIDE = 1000  # compute cap; document this choice in the report
+MAX_TILES_PER_SLIDE = 500  # compute cap; document this choice in the report
 
 
 @dataclass
