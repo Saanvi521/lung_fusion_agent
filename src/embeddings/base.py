@@ -53,3 +53,14 @@ class TileEncoder(ABC):
     @abstractmethod
     def _forward(self, x: torch.Tensor) -> torch.Tensor:
         """Model-specific forward pass -> (B, embed_dim) tensor."""
+
+    def unload(self) -> None:
+        """Free this model's memory (GPU + CPU). Call this once you're done
+        embedding with it, BEFORE loading the next model -- holding all 3
+        foundation models in memory at once is what causes Colab to run
+        out of RAM and silently kill the process."""
+        del self.model
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

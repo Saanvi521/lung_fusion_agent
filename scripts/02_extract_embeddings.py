@@ -1,18 +1,17 @@
-"""Stage 2 entry point, disk-conscious version.
+"""Stage 2 entry point, disk- AND memory-conscious version.
 
-The dataset is far too large to download in full on free Colab (~100GB for
-all 408 slides). Instead, for each patient we need, we:
+Two things changed from earlier drafts, both learned from real failures:
 
-    1. download ONLY that one slide's JPG
-    2. tile it ONCE (shared across all 3 models -- tiling doesn't depend
-       on which foundation model will look at the tiles)
-    3. run all 3 models on those tiles, mean-pool, cache each .npy
-    4. delete the downloaded JPG before moving to the next patient
-
-At any moment, at most one slide's raw image is on disk. This is the
-correct pattern regardless of disk limits -- it also fixes the earlier
-version's redundant re-tiling (it tiled the same slide 3 separate times,
-once per model's loop).
+1. Disk: never keep more than one slide's raw image on disk (download,
+   process, delete -- unchanged from before).
+2. Memory: never keep more than one FOUNDATION MODEL loaded at once.
+   Loading UNI2-h + Virchow2 + GenBio-PathFM simultaneously (~10GB of
+   weights plus loading overhead) was crashing free-tier Colab's RAM
+   silently, mid-run. So the loop is now MODEL-outer, PATIENT-inner: for
+   each model, load it, process every patient, unload it, move to the
+   next model. The trade-off is each slide gets downloaded up to 3 times
+   (once per model) instead of once -- acceptable given how fast this
+   dataset's Xet-accelerated downloads are, and much safer than crashing.
 
 Usage
 -----
@@ -48,17 +47,28 @@ def _resolve_wsi_to_repo_path(repo_id: str) -> dict[str, str]:
 
     mapping: dict[str, str] = {}
     for path in jpgs:
-        stem = Path(path).stem  # filename without extension
-        mapping[stem] = path  # assumes stem IS the WSI_ID, e.g. "WSI-35.jpg" -> "WSI-35"
+        stem = Path(path).stem
+        mapping[stem] = path
     return mapping
 
 
-def _build_encoders() -> list[TileEncoder]:
-    from src.embeddings.genbio_pathfm import GenBioPathFMEncoder
-    from src.embeddings.uni2h import UNI2HEncoder
-    from src.embeddings.virchow2 import Virchow2Encoder
+def _make_encoder(name: str) -> TileEncoder:
+    """Build exactly one encoder, by name. Imported lazily per-call so we
+    never accidentally hold more than one model class's heavy import
+    dependencies resident at once."""
+    if name == "uni2h":
+        from src.embeddings.uni2h import UNI2HEncoder
+        return UNI2HEncoder()
+    if name == "virchow2":
+        from src.embeddings.virchow2 import Virchow2Encoder
+        return Virchow2Encoder()
+    if name == "genbio_pathfm":
+        from src.embeddings.genbio_pathfm import GenBioPathFMEncoder
+        return GenBioPathFMEncoder()
+    raise ValueError(f"unknown encoder name: {name}")
 
-    return [UNI2HEncoder(), Virchow2Encoder(), GenBioPathFMEncoder()]
+
+MODEL_NAMES = ["uni2h", "virchow2", "genbio_pathfm"]
 
 
 def main() -> None:
@@ -76,61 +86,63 @@ def main() -> None:
     wsi_to_path = _resolve_wsi_to_repo_path(args.repo_id)
     print(f"Found {len(wsi_to_path)} jpgs in repo.")
 
-    encoders = _build_encoders()
-    for enc in encoders:
-        (args.out_dir / enc.name).mkdir(parents=True, exist_ok=True)
-
-    stats = {e.name: {"embed_dim": e.embed_dim, "wall_clock_sec": 0.0, "n_slides": 0} for e in encoders}
+    stats: dict = {}
     t_total_start = time.time()
 
-    for _, row in patients.iterrows():
-        out_paths = {enc.name: args.out_dir / enc.name / f"{row.patient_id}.npy" for enc in encoders}
-        if all(p.exists() for p in out_paths.values()):
-            continue  # this patient is already fully done for all 3 models
+    for model_name in MODEL_NAMES:
+        cache_dir = args.out_dir / model_name
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
-        repo_path = wsi_to_path.get(row.wsi_id)
-        if repo_path is None:
-            print(f"[warn] could not find a repo file matching WSI_ID={row.wsi_id!r} — skipping patient {row.patient_id}")
+        # Skip loading this model entirely if every patient is already done.
+        remaining = [
+            row for _, row in patients.iterrows()
+            if not (cache_dir / f"{row.patient_id}.npy").exists()
+        ]
+        if not remaining:
+            print(f"{model_name}: all patients already cached, skipping model load.")
             continue
 
-        # 1. Download just this one slide.
-        local_path = hf_hub_download(
-            args.repo_id, repo_path, repo_type="dataset", local_dir=str(args.tmp_dir)
-        )
+        print(f"\n=== Loading {model_name} ({len(remaining)} patients remaining) ===")
+        enc = _make_encoder(model_name)
+        t0 = time.time()
+        n_done = 0
 
-        # 2. Tile it once.
-        tiles = tile_slide(Path(local_path))
-        if not tiles:
-            print(f"[warn] 0 tissue tiles for patient {row.patient_id} ({row.wsi_id}) — skipping")
-            os.remove(local_path)
-            continue
-        tile_arrays = [t.array for t in tiles]
-
-        # 3. Embed with all 3 models, reusing the same tiles.
-        for enc in encoders:
-            out_path = out_paths[enc.name]
-            if out_path.exists():
+        for row in remaining:
+            out_path = cache_dir / f"{row.patient_id}.npy"
+            repo_path = wsi_to_path.get(row.wsi_id)
+            if repo_path is None:
+                print(f"[warn] no repo file matching WSI_ID={row.wsi_id!r} — skipping patient {row.patient_id}")
                 continue
-            t0 = time.time()
-            tile_embeds = enc.embed_tiles(tile_arrays)
+
+            local_path = hf_hub_download(
+                args.repo_id, repo_path, repo_type="dataset", local_dir=str(args.tmp_dir)
+            )
+            tiles = tile_slide(Path(local_path))
+            if not tiles:
+                print(f"[warn] 0 tissue tiles for patient {row.patient_id} ({row.wsi_id}) — skipping")
+                os.remove(local_path)
+                continue
+
+            tile_embeds = enc.embed_tiles([t.array for t in tiles])
             slide_embed = mean_pool(tile_embeds)
             np.save(out_path, slide_embed.astype(np.float32))
-            stats[enc.name]["wall_clock_sec"] += time.time() - t0
-            stats[enc.name]["n_slides"] += 1
+            os.remove(local_path)  # free disk immediately
 
-        # 4. Delete the raw image — this is what keeps disk usage flat.
-        os.remove(local_path)
+            n_done += 1
+            print(f"  [{model_name}] {n_done}/{len(remaining)} patient {row.patient_id} done")
 
-        done = sum(p.exists() for p in (args.out_dir / "uni2h").glob("*.npy"))
-        print(f"[{done}/{len(patients)}] patient {row.patient_id} done, image deleted")
-
-    for enc in encoders:
-        stats[enc.name]["wall_clock_sec"] = round(stats[enc.name]["wall_clock_sec"], 1)
-        stats[enc.name]["cache_dir"] = str(args.out_dir / enc.name)
+        enc.unload()  # free memory before the next model loads
+        stats[model_name] = {
+            "embed_dim": enc.embed_dim,
+            "wall_clock_sec": round(time.time() - t0, 1),
+            "n_slides_this_run": n_done,
+            "cache_dir": str(cache_dir),
+        }
+        print(f"{model_name} done: {stats[model_name]}")
 
     stats["total_wall_clock_sec"] = round(time.time() - t_total_start, 1)
     (args.out_dir / "extraction_stats.json").write_text(json.dumps(stats, indent=2))
-    print(json.dumps(stats, indent=2))
+    print("\n" + json.dumps(stats, indent=2))
     print(f"\nWrote {args.out_dir / 'extraction_stats.json'}")
 
 
