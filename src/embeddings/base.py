@@ -46,7 +46,12 @@ class TileEncoder(ABC):
         for i in range(0, len(tiles), batch_size):
             batch = tiles[i : i + batch_size]
             x = torch.stack([self.transform(Image.fromarray(t)) for t in batch]).to(self.device)
-            feats = self._forward(x)
+            with torch.autocast(
+                device_type="cuda" if self.device == "cuda" else "cpu",
+                dtype=torch.float16,
+                enabled=(self.device == "cuda"),
+            ):
+                feats = self._forward(x)
             out.append(feats.float().cpu().numpy())
         return np.concatenate(out, axis=0) if out else np.zeros((0, self.embed_dim), dtype=np.float32)
 
