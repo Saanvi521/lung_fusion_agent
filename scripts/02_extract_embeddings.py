@@ -1,25 +1,5 @@
 """Stage 2 entry point -- final version.
 
-History of what changed and why (kept here so it's not lost to chat history):
-
-  v1: patient-outer, all 3 models loaded at once, downloaded whole JPGs
-      naively. CRASHED: Image.open(...).convert("RGB") on an 80x slide
-      decodes the FULL image before we ever downsample it -- an 8-15GB
-      spike in RAM per slide, easily enough to OOM free Colab.
-  v2: switched to model-outer (one model loaded at a time) to dodge the
-      RAM spike. This "worked" but re-downloads every slide up to 3x --
-      with ~1.1GB average slide size x ~209 patients x 3 passes, that's
-      several hundred GB of redundant network transfer, ballooning total
-      runtime toward ~18 hours.
-  v3 (this file): fixed the ACTUAL bug -- src/data/tiling.py now uses
-      PIL's JPEG draft() mode, decoding directly at reduced resolution
-      (measured ~5x lower peak memory). That removes the reason v2 was
-      needed, so we go back to patient-outer: download each slide ONCE,
-      reuse the same tiles across all 3 already-loaded models. This cuts
-      total download volume back down to ~1x, which is where most of the
-      wall-clock time actually goes (downloads dominate; GPU compute per
-      slide is comparatively fast).
-
 Also: --out-dir should point at a mounted Google Drive path (see the
 Colab cell below), so every single embedding is durably saved the
 instant it's written -- a disconnect can no longer lose finished work,
