@@ -3,8 +3,9 @@ pandas
 scikit-learn
 scikit-image
 scipy
-pillow
+Pillow
 torch
-timm>=0.9.11
-transformers>=4.51
+torchvision
+timm
+transformers
 huggingface_hub

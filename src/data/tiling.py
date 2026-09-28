@@ -1,98 +1,119 @@
-"""Load a WSI, downsample 80x -> 20x, and cut it into tissue tiles.
+"""Load a slide JPG, bring it from 80x to 20x, and cut tissue tiles.
 
-We treat the JPGs as plain large images (not pyramidal formats like SVS), so
-"downsampling from 80x to 20x" is just a 4x linear resize done once up front,
-before tiling -- there is no separate pyramid level to read.
+Three memory tricks keep this inside free-Colab RAM (each was a real
+problem earlier in this project):
+
+1. ``Image.draft``: the JPEG decoder produces the ~4x smaller image
+   directly, so the full-resolution 80x image is never fully decoded.
+   A naive ``Image.open(...).convert("RGB")`` on an 80x gigapixel slide
+   can balloon to 8-15GB in decoded memory before it's ever resized.
+2. The tissue mask is computed on an 8x-smaller THUMBNAIL of the 20x
+   image, not on the full 20x image itself.
+3. Tiles are cropped straight from the PIL image. The whole 20x slide is
+   never converted to one big numpy array (that would be a second,
+   redundant ~1GB copy sitting in memory).
 """
 from __future__ import annotations
 
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from src.data.tissue_mask import tile_tissue_fraction, tissue_mask
+from src.data.tissue_mask import tissue_mask
 
-Image.MAX_IMAGE_PIXELS = None  # these are huge; we trust our own inputs
+Image.MAX_IMAGE_PIXELS = None  # slides are legitimately huge; we trust our own data
 
-DOWNSAMPLE_FACTOR = 4  # 80x -> 20x
-TILE_SIZE = 224
-STRIDE = 224  # non-overlapping; set < TILE_SIZE for overlap
-MIN_TISSUE_FRACTION = 0.5
-MAX_TILES_PER_SLIDE = 500  # compute cap; document this choice in the report
+DOWNSAMPLE_FACTOR = 4       # 80x -> 20x
+TILE_SIZE = 224             # required input size of all three foundation models
+STRIDE = 224                # non-overlapping tiles
+MIN_TISSUE_FRACTION = 0.5   # keep a tile only if >= 50% of it is tissue
+MAX_TILES_PER_SLIDE = 600   # compute/disk cap; a seeded random subset if a slide has more
+MASK_FACTOR = 8             # tissue mask is computed at 1/8 of the 20x image
 
 
 @dataclass
 class Tile:
-    x: int  # top-left coord, in 20x pixel space
+    x: int                  # top-left corner, in 20x pixel coordinates
     y: int
-    array: np.ndarray  # (TILE_SIZE, TILE_SIZE, 3) uint8
+    array: np.ndarray       # (TILE_SIZE, TILE_SIZE, 3) uint8
 
 
-def load_and_downsample(image_path: Path) -> np.ndarray:
-    """Load a slide JPG and resize 80x -> 20x (4x linear downsample).
+def load_slide_20x(image_path: Path) -> Image.Image:
+    """Open a slide JPG and return it as an RGB PIL image at 20x (1/4 size).
 
-    Uses PIL's JPEG "draft" mode: this tells the JPEG decoder to decode
-    directly at a reduced resolution (JPEG's format natively supports this,
-    in power-of-2 steps), instead of fully decoding the image at full
-    resolution and THEN shrinking it. A naive Image.open(...).convert("RGB")
-    on an 80x gigapixel slide can balloon to 8-15GB in decoded memory before
-    we ever get to resize it -- easily enough to OOM a free Colab session.
-    draft() avoids ever materializing that full-size array at all.
+    ``draft`` asks the JPEG decoder to decode at a reduced scale (it can
+    only do 1/2, 1/4, 1/8), so the giant 80x image is never fully decoded.
+    A final exact resize corrects any rounding to hit precisely
+    original_size // 4.
     """
     img = Image.open(image_path)
-    orig_w, orig_h = img.size
-    target_w, target_h = orig_w // DOWNSAMPLE_FACTOR, orig_h // DOWNSAMPLE_FACTOR
+    target = (img.width // DOWNSAMPLE_FACTOR, img.height // DOWNSAMPLE_FACTOR)
+    img.draft("RGB", target)
+    img = img.convert("RGB")
+    if img.size != target:
+        img = img.resize(target, Image.LANCZOS)
+    return img
 
-    # Ask the decoder to get close to our target for free, during decode
-    # itself (nearest power-of-2 downscale JPEG supports natively).
-    img.draft("RGB", (target_w, target_h))
-    img = img.convert("RGB")  # decodes NOW, but only at the small drafted size
 
-    # draft() only gets us to the NEAREST power-of-2 factor (1/2, 1/4, 1/8...),
-    # which may not be exactly our target. One final precise resize gets us
-    # to the exact target size -- but this resize is now cheap, since the
-    # image is already small going in.
-    if img.size != (target_w, target_h):
-        img = img.resize((target_w, target_h), Image.LANCZOS)
+def _tile_coords(
+    slide: Image.Image,
+    tile_size: int,
+    stride: int,
+    min_tissue_fraction: float,
+    factor: int,
+) -> list[tuple[int, int]]:
+    """Grid positions (x, y) whose tile is mostly tissue, judged on a thumbnail."""
+    assert tile_size % factor == 0 and stride % factor == 0
+    thumb = np.asarray(slide.reduce(factor))       # box-filtered 1/factor thumbnail
+    mask = tissue_mask(thumb)
+    t = tile_size // factor                         # tile size in mask pixels
 
-    return np.array(img)
+    coords = []
+    w, h = slide.size
+    for y in range(0, h - tile_size + 1, stride):
+        for x in range(0, w - tile_size + 1, stride):
+            patch = mask[y // factor : y // factor + t, x // factor : x // factor + t]
+            if patch.size and patch.mean() >= min_tissue_fraction:
+                coords.append((x, y))
+    return coords
 
 
 def make_tiles(
-    slide_rgb: np.ndarray,
+    slide: Image.Image,
     tile_size: int = TILE_SIZE,
     stride: int = STRIDE,
     min_tissue_fraction: float = MIN_TISSUE_FRACTION,
     max_tiles: int = MAX_TILES_PER_SLIDE,
     seed: int = 42,
+    slide_name: str = "",
 ) -> list[Tile]:
-    """Grid-tile the (already downsampled) slide, keeping tissue tiles only.
+    """Cut tissue tiles from a 20x PIL image.
 
-    If more than ``max_tiles`` tiles pass the tissue filter, subsample
-    deterministically (seeded) rather than always taking the first N in
-    raster order, which would bias toward the top-left of the slide.
+    If more than ``max_tiles`` tiles pass the tissue test, keep a seeded
+    random subset (not the first N in raster order, which would bias
+    toward the top-left of the slide). The seed is mixed with the slide
+    name so every slide gets its own subset, but it's fully reproducible.
     """
-    h, w = slide_rgb.shape[:2]
-    mask = tissue_mask(slide_rgb)
+    coords = _tile_coords(slide, tile_size, stride, min_tissue_fraction, MASK_FACTOR)
 
-    candidates: list[Tile] = []
-    for y in range(0, h - tile_size + 1, stride):
-        for x in range(0, w - tile_size + 1, stride):
-            frac = tile_tissue_fraction(mask, x, y, tile_size)
-            if frac >= min_tissue_fraction:
-                candidates.append(Tile(x=x, y=y, array=slide_rgb[y : y + tile_size, x : x + tile_size]))
+    if len(coords) > max_tiles:
+        rng = np.random.default_rng(seed + zlib.crc32(slide_name.encode()))
+        keep = np.sort(rng.choice(len(coords), size=max_tiles, replace=False))
+        coords = [coords[i] for i in keep]
 
-    if len(candidates) > max_tiles:
-        rng = np.random.default_rng(seed)
-        idx = rng.choice(len(candidates), size=max_tiles, replace=False)
-        candidates = [candidates[i] for i in sorted(idx)]
-
-    return candidates
+    return [
+        Tile(x=x, y=y, array=np.asarray(slide.crop((x, y, x + tile_size, y + tile_size))))
+        for (x, y) in coords
+    ]
 
 
 def tile_slide(image_path: Path, **kwargs) -> list[Tile]:
-    """Convenience wrapper: load, downsample, tile in one call."""
-    slide = load_and_downsample(image_path)
-    return make_tiles(slide, **kwargs)
+    """Load + downsample + tile in one call."""
+    slide = load_slide_20x(image_path)
+    try:
+        return make_tiles(slide, slide_name=Path(image_path).stem, **kwargs)
+    finally:
+        slide.close()

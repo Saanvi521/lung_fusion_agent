@@ -1,0 +1,48 @@
+# Central config documenting every stage's parameters in one place.
+# Scripts still take CLI args (so each stage is independently runnable and
+# resumable on Colab) — this file is the single source of truth for what
+# those defaults are and why, so nothing is a "magic number" buried in code.
+
+seed: 42
+
+data:
+  csv_path: "CLWD.csv"
+  label_col: "Benchmark_Label_7class"   # real column name in CLWD.csv
+  group_col: "SampleNumber"             # patient-id column; duplicates merged
+  test_frac: 0.20
+  val_frac: 0.10                        # fraction of the WHOLE set
+  split_out: "artifacts/splits/split_seed42.csv"
+
+tiling:
+  downsample_factor: 4      # 80x -> 20x
+  tile_size: 224            # required input size of all three foundation models
+  stride: 224               # non-overlapping tiles
+  min_tissue_fraction: 0.5  # keep a tile only if >= 50% of it is tissue
+  max_tiles_per_slide: 600  # compute/disk cap; seeded random subset if exceeded
+  mask_factor: 8            # tissue mask computed at 1/8 of the 20x thumbnail
+  jpeg_quality: 95          # tile cache re-encode quality
+
+embeddings:
+  models: ["uni2h", "virchow2", "genbio_pathfm"]
+  embed_dims:
+    uni2h: 1536
+    virchow2: 2560
+    genbio_pathfm: 4608
+  batch_size: 32
+  pooling: "mean"           # "mean" (primary) or "abmil" (optional ablation)
+  repo_id: "kmmuleelab/Lung_Pathology_Image_JPG"
+
+fusion:
+  families: ["early", "late", "learned"]
+
+agent:
+  max_trials: 35
+  no_improve_patience: 12
+  n_cv_splits: 5
+  n_cv_repeats: 3
+  use_llm: false             # falls back to deterministic proposer if no ANTHROPIC_API_KEY
+  explore_exploit_ratio: 0.5 # 50/50 after the fixed seed-config phase (7 configs, 1/family/variant)
+
+eval:
+  n_bootstrap: 1000
+  ci_percentiles: [2.5, 97.5]
