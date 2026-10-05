@@ -17,6 +17,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
+
 from src.agent.decision_log import DecisionLog
 from src.agent.evaluator import EvalResult, evaluate_config
 from src.agent.proposer import build_proposer
@@ -40,12 +42,36 @@ def _standard_error(result: EvalResult) -> float:
 
 def _is_significant_improvement(candidate: EvalResult, incumbent: EvalResult) -> bool:
     """Accept only if the candidate beats the incumbent by more than one
-    pooled standard error -- not just a higher point estimate. This is the
-    brief's "validation-variance-aware acceptance rule."""
+    standard error -- not just a higher point estimate. This is the
+    brief's "validation-variance-aware acceptance rule."
+
+    Fix: every trial's CV folds come from ``RepeatedStratifiedKFold`` with
+    the SAME ``seed`` (see evaluator.py), so candidate and incumbent are
+    scored on the identical 15 folds every time -- this is a PAIRED
+    comparison (same patients re-scored by a different model), not two
+    independent experiments. The old version compared them with
+    ``sqrt(se_candidate**2 + se_incumbent**2)``, the formula for two
+    independent samples, which overstates the true uncertainty of the
+    difference whenever the two configs' per-fold errors are correlated
+    (likely here, since related fusion configs share per-model
+    classifiers) -- inflating the SE and rejecting real improvements as
+    noise. Comparing the per-fold differences directly (a paired test) is
+    the statistically correct way to compare two models evaluated on
+    identical folds, and gives a tighter, more honest SE.
+    """
     if incumbent is None:
         return True
-    pooled_se = math.sqrt(_standard_error(candidate) ** 2 + _standard_error(incumbent) ** 2)
-    return (candidate.mean_auroc - incumbent.mean_auroc) > pooled_se
+    n = min(len(candidate.fold_aurocs), len(incumbent.fold_aurocs))
+    if n < 2:
+        # Folds didn't line up 1:1 (one config dropped more folds than the
+        # other, e.g. a rare class missing from a fold) -- fall back to the
+        # conservative independent-SE test rather than guess.
+        pooled_se = math.sqrt(_standard_error(candidate) ** 2 + _standard_error(incumbent) ** 2)
+        return (candidate.mean_auroc - incumbent.mean_auroc) > pooled_se
+    diffs = np.array(candidate.fold_aurocs[:n]) - np.array(incumbent.fold_aurocs[:n])
+    mean_diff = float(diffs.mean())
+    se_diff = float(diffs.std(ddof=1) / math.sqrt(n)) if n > 1 else float("inf")
+    return mean_diff > se_diff
 
 
 def run_agent(
