@@ -1,0 +1,210 @@
+[
+  {
+    "row": "metadata only (age + sex)",
+    "macro_auroc": 0.7251474050030569,
+    "balanced_accuracy": 0.4202380952380952,
+    "per_class_auroc": {
+      "Acinar": 0.4792626728110599,
+      "Cribriform": 0.9375,
+      "In situ": 0.9145833333333334,
+      "Lepidic": 0.6691176470588235,
+      "Micropapillary": 0.6484848484848484,
+      "Papillary": 0.7395833333333333,
+      "Solid": 0.6875
+    }
+  },
+  {
+    "row": "uni2h alone",
+    "macro_auroc": 0.8441489987979551,
+    "balanced_accuracy": 0.36989795918367346,
+    "per_class_auroc": {
+      "Acinar": 0.9354838709677419,
+      "Cribriform": 0.8472222222222222,
+      "In situ": 0.9458333333333334,
+      "Lepidic": 0.7058823529411765,
+      "Micropapillary": 0.7454545454545455,
+      "Papillary": 0.8333333333333334,
+      "Solid": 0.8958333333333334
+    }
+  },
+  {
+    "row": "virchow2 alone",
+    "macro_auroc": 0.8190633046962674,
+    "balanced_accuracy": 0.3040816326530612,
+    "per_class_auroc": {
+      "Acinar": 0.9078341013824884,
+      "Cribriform": 0.763888888888889,
+      "In situ": 0.9208333333333334,
+      "Lepidic": 0.7132352941176471,
+      "Micropapillary": 0.7818181818181817,
+      "Papillary": 0.78125,
+      "Solid": 0.8645833333333334
+    }
+  },
+  {
+    "row": "genbio_pathfm alone",
+    "macro_auroc": 0.811714639423707,
+    "balanced_accuracy": 0.4568027210884354,
+    "per_class_auroc": {
+      "Acinar": 0.9631336405529954,
+      "Cribriform": 0.7638888888888888,
+      "In situ": 0.9083333333333332,
+      "Lepidic": 0.6544117647058824,
+      "Micropapillary": 0.7151515151515151,
+      "Papillary": 0.7760416666666666,
+      "Solid": 0.9010416666666667
+    }
+  },
+  {
+    "row": "uni2h + metadata",
+    "macro_auroc": 0.8432831979321543,
+    "balanced_accuracy": 0.36989795918367346,
+    "per_class_auroc": {
+      "Acinar": 0.9354838709677419,
+      "Cribriform": 0.8472222222222222,
+      "In situ": 0.9458333333333334,
+      "Lepidic": 0.7058823529411765,
+      "Micropapillary": 0.7393939393939394,
+      "Papillary": 0.8333333333333333,
+      "Solid": 0.8958333333333334
+    }
+  },
+  {
+    "row": "virchow2 + metadata",
+    "macro_auroc": 0.8190498181188409,
+    "balanced_accuracy": 0.3040816326530612,
+    "per_class_auroc": {
+      "Acinar": 0.9032258064516129,
+      "Cribriform": 0.7777777777777779,
+      "In situ": 0.9166666666666667,
+      "Lepidic": 0.7132352941176471,
+      "Micropapillary": 0.7818181818181817,
+      "Papillary": 0.7708333333333333,
+      "Solid": 0.8697916666666666
+    }
+  },
+  {
+    "row": "genbio_pathfm + metadata",
+    "macro_auroc": 0.812237727446795,
+    "balanced_accuracy": 0.4568027210884354,
+    "per_class_auroc": {
+      "Acinar": 0.9631336405529954,
+      "Cribriform": 0.7777777777777778,
+      "In situ": 0.9041666666666666,
+      "Lepidic": 0.6544117647058824,
+      "Micropapillary": 0.7090909090909091,
+      "Papillary": 0.7760416666666666,
+      "Solid": 0.9010416666666667
+    }
+  },
+  {
+    "row": "best single model + metadata (uni2h + metadata)",
+    "macro_auroc": 0.8432831979321543,
+    "balanced_accuracy": 0.36989795918367346,
+    "per_class_auroc": {
+      "Acinar": 0.9354838709677419,
+      "Cribriform": 0.8472222222222222,
+      "In situ": 0.9458333333333334,
+      "Lepidic": 0.7058823529411765,
+      "Micropapillary": 0.7393939393939394,
+      "Papillary": 0.8333333333333333,
+      "Solid": 0.8958333333333334
+    }
+  },
+  {
+    "row": "fused (agent-selected) + metadata",
+    "macro_auroc": 0.8317616086023852,
+    "balanced_accuracy": 0.4151360544217687,
+    "per_class_auroc": {
+      "Acinar": 0.9493087557603687,
+      "Cribriform": 0.7916666666666667,
+      "In situ": 0.9208333333333334,
+      "Lepidic": 0.7058823529411764,
+      "Micropapillary": 0.7515151515151515,
+      "Papillary": 0.8229166666666667,
+      "Solid": 0.8802083333333333
+    },
+    "confusion_matrix": [
+      [
+        5,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2
+      ],
+      [
+        0,
+        0,
+        5,
+        1,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        2,
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        1,
+        2
+      ],
+      [
+        1,
+        0,
+        0,
+        1,
+        0,
+        4,
+        0
+      ],
+      [
+        1,
+        1,
+        0,
+        0,
+        1,
+        0,
+        3
+      ]
+    ],
+    "classes": [
+      "Acinar",
+      "Cribriform",
+      "In situ",
+      "Lepidic",
+      "Micropapillary",
+      "Papillary",
+      "Solid"
+    ],
+    "auroc_ci": [
+      0.7554121314978551,
+      0.9032585287934807
+    ],
+    "bal_acc_ci": [
+      0.28851808905380333,
+      0.5724565381708239
+    ]
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "uni2h": {
+    "embed_dim": 1536,
+    "wall_clock_sec_this_run": 3695.0,
+    "n_slides_this_run": 197,
+    "n_slides_total": 197
+  },
+  "virchow2": {
+    "embed_dim": 2560,
+    "wall_clock_sec_this_run": 3804.3,
+    "n_slides_this_run": 197,
+    "n_slides_total": 197
+  },
+  "genbio_pathfm": {
+    "embed_dim": 4608,
+    "wall_clock_sec_this_run": 14891.1,
+    "n_slides_this_run": 177,
+    "n_slides_total": 197
+  }
+}
