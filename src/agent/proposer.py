@@ -35,6 +35,22 @@ SEARCH_SPACE = {
     },
     "late": {
         "combine": ["mean", "weighted", "stacking"],
+        # Fix: "weighted" previously had no actual weight values to search
+        # over, so config.get("weights") was always None and silently fell
+        # back to equal thirds -- mathematically identical to "mean". These
+        # are real, distinct weight vectors so "weighted" is an actually
+        # different strategy once this is picked. [0.6, 0.2, 0.2] etc. lean
+        # toward whichever model the trial is currently built from (the
+        # perturbation logic keeps the config's model order fixed via
+        # MODEL_NAMES = [uni2h, virchow2, genbio_pathfm], so these favor
+        # uni2h first since it was the strongest standalone model).
+        "weights": [
+            [1 / 3, 1 / 3, 1 / 3],
+            [0.6, 0.2, 0.2],
+            [0.5, 0.25, 0.25],
+            [0.6, 0.3, 0.1],
+            [0.45, 0.35, 0.2],
+        ],
         "C": [0.1, 1.0, 10.0],
     },
     "learned": {
@@ -53,7 +69,10 @@ SEED_CONFIGS: list[dict[str, Any]] = [
     {**default_config("early"), "l2_normalize": False, "pca_dim": None},
     {**default_config("early"), "l2_normalize": True, "pca_dim": 128},
     {**default_config("late"), "combine": "mean"},
-    {**default_config("late"), "combine": "weighted"},
+    # Fix: this used to be {"combine": "weighted"} with weights left at the
+    # default None, which is identical to "mean" -- give it real weights so
+    # the very first weighted trial is an honest, distinct test.
+    {**default_config("late"), "combine": "weighted", "weights": [0.6, 0.2, 0.2]},
     {**default_config("late"), "combine": "stacking"},
     {**default_config("learned")},
 ]
