@@ -101,8 +101,17 @@ class DeterministicProposer:
                 config[key] = self.rng.choice(options)
             return config, f"explore: random {family} config, untried region of the search space"
 
-        # Exploit: perturb ONE hyperparameter of the current best
-        best = max(history, key=lambda h: h["score"])
+        # Exploit: perturb ONE hyperparameter of the current best.
+        # Fix: must only ever consider ACCEPTED trials here. A trial that
+        # scored high but was rejected by the SE-gate (not a real
+        # improvement, just noise) should never become the base for future
+        # mutation -- doing so silently defeats the whole point of the
+        # significance test, chasing exactly the noise it was built to
+        # ignore. Falls back to the full history only in the (shouldn't
+        # happen after the seed phase) case where nothing has been
+        # accepted yet.
+        accepted_history = [h for h in history if h.get("accepted")]
+        best = max(accepted_history or history, key=lambda h: h["score"])
         config = copy.deepcopy(best["config"])
         family = config["family"]
         key = self.rng.choice(list(SEARCH_SPACE[family].keys()))

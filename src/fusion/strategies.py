@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler, normalize
 
 from src.fusion.data import FusionDataset
@@ -154,11 +155,32 @@ class LateFusionModel:
             self._fit_one_model(ds, m, train_idx)
 
         if self.config.get("combine") == "stacking":
-            probs = [self._proba_one_model(ds, m, train_idx) for m in MODEL_NAMES]
+            # Fix: the meta-classifier's training features must come from
+            # OUT-OF-FOLD predictions, not in-sample ones. The per-model
+            # classifiers above were just fit on ALL of train_idx, so asking
+            # them to predict on that same train_idx gives artificially
+            # confident/accurate probabilities -- nothing like what they'll
+            # actually produce on unseen patients at test time. Training the
+            # stacker on those in-sample probabilities teaches it a
+            # combination rule for inputs it will never see again, which is
+            # almost certainly why "stacking" scored worst of all 3 combine
+            # options in the real run. Building 5-fold cross-validated
+            # out-of-fold predictions instead matches train-time features to
+            # test-time conditions, the standard fix for stacking leakage.
+            y_train = ds.y[train_idx]
+            n_classes = len(ds.classes)
+            oof_probs = {m: np.zeros((len(train_idx), n_classes)) for m in MODEL_NAMES}
+            skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            for fold_tr_local, fold_val_local in skf.split(train_idx, y_train):
+                fold_tr_idx = train_idx[fold_tr_local]
+                fold_val_idx = train_idx[fold_val_local]
+                for m in MODEL_NAMES:
+                    fold_model = LateFusionModel(config=self.config)
+                    fold_model._fit_one_model(ds, m, fold_tr_idx)
+                    oof_probs[m][fold_val_local] = fold_model._proba_one_model(ds, m, fold_val_idx)
             meta, _ = _metadata_matrix(ds, train_idx, self.age_scaler, fit=False)
-            X_stack = np.concatenate(probs + [meta], axis=1)
-            y = ds.y[train_idx]
-            self.stacker = LogisticRegression(max_iter=2000, class_weight="balanced").fit(X_stack, y)
+            X_stack = np.concatenate([oof_probs[m] for m in MODEL_NAMES] + [meta], axis=1)
+            self.stacker = LogisticRegression(max_iter=2000, class_weight="balanced").fit(X_stack, y_train)
 
     def predict_proba(self, ds: FusionDataset, idx: np.ndarray) -> np.ndarray:
         probs = [self._proba_one_model(ds, m, idx) for m in MODEL_NAMES]
