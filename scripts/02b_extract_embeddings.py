@@ -62,14 +62,31 @@ def main() -> None:
     ap.add_argument("--out-dir", required=True, type=Path,
                      help="Same mounted Drive path used for 02a_tile_slides.py")
     ap.add_argument("--batch-size", type=int, default=32)
+    ap.add_argument("--save-tile-embeds", action="store_true",
+                     help="Also save the full (N_tiles, D) per-patient tile embedding array, "
+                          "not just the mean-pooled (D,) vector. Needed once, as a re-run of "
+                          "this stage (no re-download -- reads from the tile cache written by "
+                          "02a), before scripts/02c_train_abmil.py can run. Adds real disk "
+                          "usage: roughly N_tiles x embed_dim x 4 bytes per patient (~3.7MB/"
+                          "patient for UNI2-h at 600 tiles, more for the higher-dim models) -- "
+                          "check Drive space before turning this on.")
     args = ap.parse_args()
 
     patients = pd.read_csv(args.split)
     tiles_dir = args.out_dir / "tiles"
     emb_dir = args.out_dir / "embeddings" / args.model
     emb_dir.mkdir(parents=True, exist_ok=True)
+    tile_emb_dir = args.out_dir / "tile_embeddings" / args.model
+    if args.save_tile_embeds:
+        tile_emb_dir.mkdir(parents=True, exist_ok=True)
 
-    remaining = [row for _, row in patients.iterrows() if not (emb_dir / f"{row.patient_id}.npy").exists()]
+    if args.save_tile_embeds:
+        # Re-embed every patient (not just ones missing a mean-pooled vector) so the
+        # tile-level cache is complete even for patients already done in an earlier run.
+        remaining = [row for _, row in patients.iterrows()
+                     if not (tile_emb_dir / f"{row.patient_id}.npy").exists()]
+    else:
+        remaining = [row for _, row in patients.iterrows() if not (emb_dir / f"{row.patient_id}.npy").exists()]
     if not remaining:
         print(f"{args.model}: every patient already has an embedding. Nothing to do.")
         return
@@ -93,6 +110,8 @@ def main() -> None:
             tile_embeds = enc.embed_tiles(tiles, batch_size=args.batch_size)
             slide_embed = mean_pool(tile_embeds).astype(np.float32)
             save_npy_atomic(emb_dir / f"{row.patient_id}.npy", slide_embed)
+            if args.save_tile_embeds:
+                save_npy_atomic(tile_emb_dir / f"{row.patient_id}.npy", tile_embeds.astype(np.float32))
             n_done += 1
             print(f"[{args.model}] {n_done}/{len(remaining)} patient {row.patient_id} done")
     finally:
