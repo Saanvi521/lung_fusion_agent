@@ -22,17 +22,6 @@ and the K vectors are averaged.
 This works because ABMIL's pooled vector is a weighted average of the raw
 foundation-model tile features, so vectors from different networks all live in
 the same feature space and can be mixed and averaged.
-
-Also writes {model}_abmil_head_scores.json: AUROC of ABMIL's OWN classifier head
-(no logistic regression on top), out-of-fold on train+val and on test.
-
-Usage (run once per model, same arguments as 02c)
--------------------------------------------------
-    python -m scripts.02d_crossfit_abmil --model uni2h \
-        --split artifacts/splits/split_seed42.csv \
-        --tile-emb-dir /content/drive/MyDrive/lung_fusion_data/tile_embeddings/uni2h \
-        --emb-out-dir /content/drive/MyDrive/lung_fusion_data/embeddings_abmil_cf/uni2h \
-        --embed-dim 1536
 """
 from __future__ import annotations
 

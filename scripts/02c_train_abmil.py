@@ -1,12 +1,4 @@
 """Stage 2c: trains ABMILClassifier (src/embeddings/aggregate.py), writes attention-pooled (D,) embeddings to --emb-out-dir. Needs 02b_extract_embeddings.py --save-tile-embeds run first.
-
-Usage (run once per model)
----------------------------
-    python -m scripts.02c_train_abmil --model uni2h \
-        --split artifacts/splits/split_seed42.csv \
-        --tile-emb-dir /content/drive/MyDrive/lung_fusion_data/tile_embeddings/uni2h \
-        --emb-out-dir /content/drive/MyDrive/lung_fusion_data/embeddings_abmil/uni2h \
-        --embed-dim 1536
 """
 from __future__ import annotations
 

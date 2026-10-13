@@ -1,29 +1,4 @@
 """Stage 2b: embed every patient's cached tiles with ONE foundation model.
-
-Run this three times, once per --model, in separate cells/sessions if you
-like -- that's the whole point. Only one model is ever loaded into memory
-(the previous script, 02a, already did all the downloading and tiling, so
-this step never touches the network for slide images and never needs more
-than ~1 model's worth of RAM/VRAM).
-
-Point --out-dir at the SAME mounted Drive path used for 02a. Each patient's
-embedding is written atomically the instant it's computed, so a disconnect
-loses at most the one in-flight patient -- rerun the exact same command and
-it picks up where it left off.
-
-Usage (run 3 times total, once per model)
-------------------------------------------
-    python -m scripts.02b_extract_embeddings --model uni2h \
-        --split artifacts/splits/split_seed42.csv \
-        --out-dir /content/drive/MyDrive/lung_fusion_data
-
-    python -m scripts.02b_extract_embeddings --model virchow2 \
-        --split artifacts/splits/split_seed42.csv \
-        --out-dir /content/drive/MyDrive/lung_fusion_data
-
-    python -m scripts.02b_extract_embeddings --model genbio_pathfm \
-        --split artifacts/splits/split_seed42.csv \
-        --out-dir /content/drive/MyDrive/lung_fusion_data
 """
 from __future__ import annotations
 

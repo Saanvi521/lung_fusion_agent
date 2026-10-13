@@ -1,0 +1,9 @@
+{
+  "best_config": {
+    "family": "early",
+    "l2_normalize": true,
+    "pca_dim": 128,
+    "C": 1.0
+  },
+  "n_trials_run": 15
+}
