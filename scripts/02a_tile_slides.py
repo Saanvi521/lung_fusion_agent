@@ -1,26 +1,5 @@
 """Stage 2a: download each slide ONCE, tile it, cache the tiles, delete the
-raw image. No foundation model is loaded here at all -- this step is pure
-CPU + disk I/O, so it can't run out of GPU/model memory.
-
-This is what makes it safe to later load the three foundation models one
-at a time (02b) WITHOUT re-downloading each ~1GB slide three times: the
-tiles are already sitting in the cache, read from disk in a fraction of a
-second.
-
-Point --out-dir at a MOUNTED GOOGLE DRIVE PATH. Every patient's tile zip is
-written atomically the moment it's ready, so a Colab disconnect at patient
-150 loses at most the one patient that was mid-flight -- rerunning this
-exact command resumes from patient 151 automatically.
-
-Usage
------
-    from google.colab import drive
-    drive.mount('/content/drive')
-
-    python -m scripts.02a_tile_slides \
-        --split artifacts/splits/split_seed42.csv \
-        --out-dir /content/drive/MyDrive/lung_fusion_data \
-        --repo-id kmmuleelab/Lung_Pathology_Image_JPG
+raw image. 
 """
 from __future__ import annotations
 
