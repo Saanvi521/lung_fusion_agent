@@ -1,23 +1,7 @@
-"""Stage 2e: plot ABMIL's per-epoch train/validation loss curve for the report.
+"""Stage 2e: plot a training/validation loss curve for the report.
 
-This does NOT change any production embeddings or results -- it's a
-diagnostic-only run. It retrains one ABMIL network (same recipe as 02c/02d's
-train_abmil) on one foundation model, logging train loss and held-out
-("stop") loss every epoch, then saves a PNG plot plus the raw numbers.
-
-By default it reproduces 02c's original setup (one network trained on all
-146 train patients, early-stopped on the 21 val patients) since that's the
-simplest, most interpretable curve for a report figure. Run once per model
-if you want all three, or just one (e.g. uni2h) if you only need to show
-the method is learning and stopping sensibly.
-
-Usage
------
-    python -m scripts.02e_plot_training_curve --model uni2h \
-        --split artifacts/splits/split_seed42.csv \
-        --tile-emb-dir /content/drive/MyDrive/lung_fusion_data/tile_embeddings/uni2h \
-        --embed-dim 1536 \
-        --out-dir artifacts/figures
+This reproduces fold 1 of 02d_crossfit_abmil.py's actual 5-fold
+cross-fitting
 """
 from __future__ import annotations
 
@@ -30,7 +14,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from src.embeddings.aggregate import ABMILClassifier
 
@@ -44,6 +28,8 @@ def main() -> None:
     ap.add_argument("--tile-emb-dir", required=True, type=Path)
     ap.add_argument("--embed-dim", type=int, required=True)
     ap.add_argument("--out-dir", type=Path, default=Path("artifacts/figures"))
+    ap.add_argument("--n-folds", type=int, default=5)
+    ap.add_argument("--fold-to-plot", type=int, default=0, help="which of the n-folds cross-fit folds to log (0-indexed)")
     ap.add_argument("--hidden-dim", type=int, default=128)
     ap.add_argument("--max-epochs", type=int, default=200)
     ap.add_argument("--patience", type=int, default=20)
@@ -55,6 +41,7 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
+    # ---- same loading as 02d ----
     df = pd.read_csv(args.split)
     df["patient_id"] = df["patient_id"].astype(str)
     classes = sorted(df[LABEL_COL].unique().tolist())
@@ -68,14 +55,25 @@ def main() -> None:
             arr = np.load(path)
             if arr.shape[0] > 0:
                 bags[pid] = arr
+    df = df[df["patient_id"].isin(bags)]
 
-    # Reproduces 02c: one network trained on train, early-stopped on val.
-    fit_pids = df[(df["split"] == "train") & (df["patient_id"].isin(bags))]["patient_id"].tolist()
-    stop_pids = df[(df["split"] == "val") & (df["patient_id"].isin(bags))]["patient_id"].tolist()
-    print(f"[{args.model}] training on {len(fit_pids)} patients, validating on {len(stop_pids)}")
+    trainval = df[df["split"].isin(["train", "val"])]["patient_id"].to_numpy()
+    trainval_y = np.array([y_by_pid[p] for p in trainval])
 
-    torch.manual_seed(args.seed)
-    rng = np.random.RandomState(args.seed)
+    # ---- same fold split as 02d; isolate just the one fold we're logging ----
+    folds = StratifiedKFold(n_splits=args.n_folds, shuffle=True, random_state=args.seed)
+    fold_list = list(folds.split(trainval, trainval_y))
+    fit_idx, out_idx = fold_list[args.fold_to_plot]
+    fit_pids_all = list(trainval[fit_idx])
+    k = args.fold_to_plot
+    print(f"[{args.model}] logging fold {k + 1}/{args.n_folds} ({len(fit_pids_all)} patients available to this fold)")
+
+    # ---- same train_abmil recipe as 02d, with per-epoch logging added ----
+    torch.manual_seed(args.seed + k)
+    rng = np.random.RandomState(args.seed + k)
+    labels = [y_by_pid[p] for p in fit_pids_all]
+    fit_pids, stop_pids = train_test_split(fit_pids_all, test_size=0.15, random_state=args.seed + k, stratify=labels)
+
     model = ABMILClassifier(args.embed_dim, n_classes, args.hidden_dim).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
@@ -118,8 +116,8 @@ def main() -> None:
     if stopped_at is None:
         stopped_at = args.max_epochs - 1
 
-    # Save the raw numbers too, not just the picture.
     (args.out_dir / f"{args.model}_training_curve.json").write_text(json.dumps({
+        "fold_logged": k, "n_folds": args.n_folds,
         "train_loss": train_losses, "val_loss": val_losses, "stopped_at_epoch": stopped_at,
     }, indent=2))
 
@@ -129,7 +127,7 @@ def main() -> None:
     plt.axvline(stopped_at, color="gray", linestyle="--", label=f"Early stop (epoch {stopped_at})")
     plt.xlabel("Epoch")
     plt.ylabel("Cross-entropy loss")
-    plt.title(f"ABMIL training curve — {args.model}")
+    plt.title(f"ABMIL training curve — {args.model} (cross-fit fold {k + 1}/{args.n_folds})")
     plt.legend()
     plt.tight_layout()
     out_png = args.out_dir / f"{args.model}_training_curve.png"
