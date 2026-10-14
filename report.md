@@ -50,6 +50,20 @@ All frozen, pretrained, never fine-tuned. Only the classifier(s) on top are trai
 
 **Fix (cross-fitting, `02d_crossfit_abmil.py`):** split train+val into 5 groups; for each, train a fresh network on the other 4 and pool only the held-out group. Test patients are pooled by all 5 networks and averaged. Verified on synthetic no-signal data (old: CV AUROC 0.73; cross-fit: 0.59, matching mean pooling) and on the real gap between ABMIL's own out-of-fold and test scores (shrinks from 0.10–0.15+ to 0.02–0.05 after the fix). All ABMIL numbers below use the cross-fitted version.
 
+**Training curves (one representative fold):** figures below show train/validation loss per epoch for fold 1 of 5 for each model. Train loss falls smoothly toward 0 on all three, and early stopping fires once validation loss stops improving. uni2h and GenBio-PathFM plateau noisily. Virchow2's validation loss climbs after an early minimum at epoch 5, which is overfitting in this fold. This is one fold out of five; it illustrates the training dynamics, not a claim that every fold behaves identically.
+
+**uni2h**
+
+![uni2h training curve](figures/uni2h_training_curve.png)
+
+**Virchow2**
+
+![Virchow2 training curve](figures/virchow2_training_curve.png)
+
+**GenBio-PathFM**
+
+![GenBio-PathFM training curve](figures/genbio_pathfm_training_curve.png)
+
 ---
 
 ## 5. Fusion Strategies
@@ -150,9 +164,9 @@ Per-class AUROC: Acinar 0.949 · Cribriform 0.792 · In situ 0.921 · Lepidic 0.
 
 ## 8. Explanation
 
-Fusion doesn't beat the best single model (UNI2-h) with either pooling method, but that's not a failure of the approach — it's a sample-size result. The agent's weighted 60/20/20 config is a real, CV-verified improvement over an even split, since UNI2-h is clearly the strongest model alone. But even weighted, the other two models pull predictions slightly away from what UNI2-h alone would say, and on 38 test patients that costs more than it gains. A learned per-patient weighting did no better than the fixed ratio — with only 146 training patients, there isn't enough data for any method to reliably beat the single best model. The bootstrap CI backs this up: UNI2-h's score falls inside the fused model's own confidence interval, so the two aren't statistically different.
+The results suggest UNI2-h is the strongest of the three foundation models alone. Fused and ABMIL both perform similarly to it, though UNI2-h is marginally better under both pooling methods. The agent's weighted 60/20/20 config is a real, CV-verified improvement over an even split, reflecting that UNI2-h is the strongest model alone. Even weighted, the other two models pull predictions slightly away from what UNI2-h alone would say, and on 38 test patients that costs slightly more than it gains. A learned per-patient weighting did no better than the fixed ratio — with only 146 training patients, there isn't much room for any fusion method to separate itself from the single best model. The bootstrap CI reflects this: UNI2-h's score falls inside the fused model's own confidence interval, so the two aren't statistically distinguishable.
 
-Switching to ABMIL pooling doesn't change this conclusion. UNI2-h and Virchow2 land close to their mean-pooling scores (Virchow2 is within noise). GenBio-PathFM drops more (0.812 → 0.771). I don't have a confirmed reason for this and won't guess at one past this: it's the one model where cross-fitting leaves each of the 5 networks with meaningfully less training data (~115-120 patients instead of one network's full 146), so it's a plausible suspect, but I haven't tested it directly and don't want to present it as established. All fused scores (mean 0.832, ABMIL 0.821) sit within ~0.01 of each other — not distinguishable at this sample size.
+Switching to ABMIL pooling doesn't change this conclusion. UNI2-h and Virchow2 land close to their mean-pooling scores (Virchow2 is within noise). GenBio-PathFM drops more (0.812 → 0.771). I don't have a confirmed reason for this and won't guess at one past this: it's the one model where cross-fitting leaves each of the 5 networks with meaningfully less training data (~115-120 patients instead of one network's full 146), so it's a plausible suspect, but I haven't tested it directly and don't want to present it as established. All fused scores (mean 0.832, ABMIL 0.821) sit within ~0.01 of each other.
 
 The confusion matrix shows a problem no fusion or pooling choice fixes: Lepidic and Cribriform have only 6 test patients combined and 0% recall — too few examples to learn what separates them from visually similar classes. That's also why balanced accuracy (0.415) trails macro AUROC (0.832) so much.
 

@@ -19,7 +19,7 @@ Designed to run on free-tier Google Colab/Kaggle GPU. Point Drive-dependent stag
 | 2b | `scripts/02b_extract_embeddings.py` | Embeds cached tiles with one foundation model, mean-pools to one vector/patient. Run 3x — once per `--model` (`uni2h`, `virchow2`, `genbio_pathfm`). |
 | 2c | `scripts/02c_train_abmil.py` | Trains one ABMIL attention-pooling network per model (superseded by `02d` for reported results — kept for reference). |
 | 2d | `scripts/02d_crossfit_abmil.py` | Cross-fitted ABMIL pooling (fixes a train/test leakage issue in `02c` — see `report.md` §4/§6.1). Produces the ABMIL numbers actually reported. Run 3x, once per model. |
-| 2e | `scripts/02e_plot_training_curve.py` | Diagnostic-only: plots ABMIL's per-epoch train/validation loss curve for the report. Doesn't affect any results. |
+| 2e | `scripts/02e_plot_training_curve.py` | Diagnostic-only: plots ABMIL's per-epoch train/validation loss curve for one representative cross-fit fold, using `02d`'s own split logic and hyperparameters. Writes to `figures/`. Doesn't affect any results. |
 | 3 | `scripts/03_run_agent.py` | Runs the fusion-strategy search agent (early/late/learned) and the once-only test evaluation. Run once per `--embeddings-dir` (mean-pooled vs. ABMIL cross-fit). |
 
 Example:
@@ -45,6 +45,7 @@ src/
 scripts/             stage entry points (table above)
 notebooks/           Colab-runnable version of the full pipeline
 artifacts/           splits, agent run outputs, decision logs (cached embeddings are gitignored — too large to commit)
+figures/             plots referenced in report.md (ABMIL training curves, agent search trajectories)
 report.md            full technical report
 ```
 
@@ -53,4 +54,4 @@ report.md            full technical report
 - `artifacts/` (root) — original run on mean-pooled embeddings.
 - `artifacts/agent_run_abmil_cf/` — run on cross-fitted ABMIL embeddings (the ABMIL numbers in the report), plus each model's own-head AUROC (`*_abmil_head_scores.json`).
 
-No API key is required to run the agent — it uses a deterministic search by default and degrades gracefully if `ANTHROPIC_API_KEY` isn't set.
+No API key is required to run the agent.
