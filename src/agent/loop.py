@@ -14,8 +14,10 @@ pure luck -- accepting only "beats noise" improvements is what keeps a
 """
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -33,6 +35,9 @@ class AgentConfig:
     seed: int = 42
     n_cv_splits: int = 5
     n_cv_repeats: int = 3
+    families: tuple = ("early", "late", "learned")
+    mil_cv_repeats: int = 1  # MIL trials are ~100x costlier; the first repeat uses the SAME 5 folds,
+                             # so paired comparisons against other families stay valid (on those folds)
 
 
 def _standard_error(result: EvalResult) -> float:
@@ -74,12 +79,47 @@ def _is_significant_improvement(candidate: EvalResult, incumbent: EvalResult) ->
     return mean_diff > se_diff
 
 
+class _TrialCache:
+    """Every finished trial's CV result is appended to ``trial_cache.jsonl`` next to the decision
+    log. If the run dies (Colab disconnect), rerunning the same command replays the search: the
+    deterministic proposer proposes the same configs in the same order, finished ones are read
+    from the cache instantly, and the search continues where it stopped."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.store: dict[str, dict] = {}
+        if self.path.exists():
+            for line in self.path.read_text().splitlines():
+                if line.strip():
+                    rec = json.loads(line)
+                    self.store[rec["key"]] = rec["result"]
+
+    @staticmethod
+    def key(config: dict, reps: int) -> str:
+        return json.dumps({"config": config, "reps": reps}, sort_keys=True)
+
+    def get(self, key: str) -> EvalResult | None:
+        r = self.store.get(key)
+        return EvalResult(**r) if r else None
+
+    def put(self, key: str, result: EvalResult) -> None:
+        self.store[key] = asdict(result)
+        with self.path.open("a") as f:
+            f.write(json.dumps({"key": key, "result": asdict(result)}) + "\n")
+
+
 def run_agent(
     ds: FusionDataset,
     log_path,
     agent_config: AgentConfig = AgentConfig(),
 ) -> dict:
-    proposer = build_proposer(use_llm=agent_config.use_llm, seed=agent_config.seed)
+    proposer = build_proposer(use_llm=agent_config.use_llm, seed=agent_config.seed,
+                              families=list(agent_config.families))
+    log_path = Path(log_path)
+    cache = _TrialCache(log_path.parent / "trial_cache.jsonl")
+    if cache.store:
+        print(f"[agent] resuming: {len(cache.store)} finished trials found in {cache.path}")
+        log_path.unlink(missing_ok=True)  # the replay rewrites the decision log identically
     log = DecisionLog(log_path)
 
     history: list[dict] = []
@@ -91,9 +131,14 @@ def run_agent(
         config, rationale = proposer.propose(history)
 
         try:
-            result = evaluate_config(
-                config, ds, n_splits=agent_config.n_cv_splits, n_repeats=agent_config.n_cv_repeats, seed=agent_config.seed
-            )
+            reps = agent_config.mil_cv_repeats if config.get("family") == "mil" else agent_config.n_cv_repeats
+            key = cache.key(config, reps)
+            result = cache.get(key)
+            if result is None:
+                result = evaluate_config(
+                    config, ds, n_splits=agent_config.n_cv_splits, n_repeats=reps, seed=agent_config.seed
+                )
+                cache.put(key, result)
         except Exception as e:  # noqa: BLE001 -- one bad config (e.g. torch missing for
             # "learned") should not end a 35-trial search; log it and move on.
             print(f"[trial {trial_idx}/{agent_config.max_trials}] {config.get('family')} FAILED: {e} -- skipping")
@@ -125,7 +170,12 @@ def run_agent(
                 f"did not beat incumbent ({incumbent_result.mean_auroc:.4f}) by more than 1 SE "
                 f"-- treated as noise, incumbent unchanged"
             )
-            trials_since_improvement += 1
+            # the no-improvement patience only starts once every seed config (one per family /
+            # variant) has been tried -- otherwise a family listed late in the seed batch (e.g. mil)
+            # can be cut before it is ever evaluated
+            n_seed = len(getattr(getattr(proposer, "fallback", proposer), "seed_configs", []))
+            if trial_idx > n_seed:
+                trials_since_improvement += 1
 
         history.append({"config": config, "score": result.mean_auroc, "accepted": accepted})
 

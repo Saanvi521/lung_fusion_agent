@@ -31,10 +31,12 @@ SEARCH_SPACE = {
     "early": {
         "l2_normalize": [True, False],
         "pca_dim": [None, 64, 128, 256],
-        "C": [0.1, 1.0, 10.0],
+        # "auto" = C chosen per fit by inner-CV log-loss. The old grid [0.1, 1, 10] had no
+        # strongly-regularised option at all, for 1.5k-8.7k features and ~130 patients.
+        "C": ["auto", 1e-3, 1e-2, 0.1, 1.0],
     },
     "late": {
-        "combine": ["mean", "weighted", "stacking"],
+        "combine": ["mean", "logmean", "weighted", "stacking"],
         # Fix: "weighted" previously had no actual weight values to search
         # over, so config.get("weights") was always None and silently fell
         # back to equal thirds -- mathematically identical to "mean". These
@@ -51,13 +53,22 @@ SEARCH_SPACE = {
             [0.6, 0.3, 0.1],
             [0.45, 0.35, 0.2],
         ],
-        "C": [0.1, 1.0, 10.0],
+        "C": ["auto", 1e-3, 1e-2, 0.1, 1.0],
     },
     "learned": {
         "hidden_dim": [32, 64, 128],
         "dropout": [0.3, 0.5, 0.7],
         "weight_decay": [1e-4, 1e-3, 1e-2],
         "epochs": [20, 30, 50],
+    },
+    # attention-MIL fusion on tile bags; only searched when bags are loaded
+    "mil": {
+        "fusion": ["tile_concat", "gated", "late"],
+        "proj_dim": [128, 256],
+        "dropout": [0.25, 0.5],
+        "stream_dropout": [0.0, 0.2],
+        "lr": [1e-4, 2e-4, 5e-4],
+        "weight_decay": [1e-4, 1e-2],
     },
 }
 
@@ -77,25 +88,46 @@ SEED_CONFIGS: list[dict[str, Any]] = [
     {**default_config("learned")},
 ]
 
+# Added to the seed batch only when the mil family is enabled: one per fusion mode.
+MIL_SEED_CONFIGS: list[dict[str, Any]] = [
+    {**default_config("mil"), "fusion": "tile_concat"},
+    {**default_config("mil"), "fusion": "gated"},
+    {**default_config("mil"), "fusion": "late"},
+]
+
 
 class DeterministicProposer:
     name = "deterministic"
 
-    def __init__(self, seed: int = 42):
+    def __init__(self, seed: int = 42, families: list[str] | None = None):
         self.rng = random.Random(seed)
         self._seed_idx = 0
+        self.families = families or ["early", "late", "learned"]
+        self.seed_configs = [c for c in SEED_CONFIGS if c["family"] in self.families]
+        if "mil" in self.families:
+            self.seed_configs += MIL_SEED_CONFIGS
 
     def propose(self, history: list[dict]) -> tuple[dict, str]:
+        """Like ``_propose`` but never re-proposes a config that was already evaluated
+        (the first version re-ran identical configs, spending trial budget on known answers)."""
+        seen = {json.dumps(h["config"], sort_keys=True) for h in history}
+        for _ in range(50):
+            config, why = self._propose(history)
+            if json.dumps(config, sort_keys=True) not in seen:
+                return config, why
+        return config, why + " (search space around the incumbent exhausted; repeat)"
+
+    def _propose(self, history: list[dict]) -> tuple[dict, str]:
         # Phase 1: exhaust the fixed seed batch first, so every family gets
         # at least one honest, untuned try before any local search begins.
-        if self._seed_idx < len(SEED_CONFIGS):
-            config = copy.deepcopy(SEED_CONFIGS[self._seed_idx])
+        if self._seed_idx < len(self.seed_configs):
+            config = copy.deepcopy(self.seed_configs[self._seed_idx])
             self._seed_idx += 1
-            return config, f"seed config {self._seed_idx}/{len(SEED_CONFIGS)}: cover this family's default first"
+            return config, f"seed config {self._seed_idx}/{len(self.seed_configs)}: cover this family's default first"
 
         # Phase 2: explore/exploit, 50/50
         if not history or self.rng.random() < 0.5:
-            family = self.rng.choice(list(SEARCH_SPACE.keys()))
+            family = self.rng.choice(self.families)
             config = default_config(family)
             for key, options in SEARCH_SPACE[family].items():
                 config[key] = self.rng.choice(options)
@@ -125,8 +157,9 @@ class DeterministicProposer:
 class LLMProposer:
     name = "llm"
 
-    def __init__(self, seed: int = 42):
-        self.fallback = DeterministicProposer(seed=seed)
+    def __init__(self, seed: int = 42, families: list[str] | None = None):
+        self.fallback = DeterministicProposer(seed=seed, families=families)
+        self.families = self.fallback.families
         self.api_key = os.environ.get("ANTHROPIC_API_KEY")
         self.active = self.api_key is not None
         if not self.active:
@@ -152,8 +185,8 @@ class LLMProposer:
                 "You are tuning a fusion strategy that combines 3 pathology "
                 "foundation-model embeddings + age/sex to predict a 7-class "
                 "lung cancer subtype. Search space (families: early/late/learned) "
-                f"is: {json.dumps(SEARCH_SPACE)}. Seed configs already tried: "
-                f"{json.dumps(SEED_CONFIGS)}. Recent trial history (most recent "
+                f"is: {json.dumps({f: SEARCH_SPACE[f] for f in self.families})}. Seed configs already tried: "
+                f"{json.dumps(self.fallback.seed_configs)}. Recent trial history (most recent "
                 f"last): {json.dumps(trimmed_history)}. Propose ONE new config as "
                 "a JSON object matching the search space schema, plus a one "
                 "sentence rationale. Respond with ONLY a JSON object: "
@@ -173,7 +206,7 @@ class LLMProposer:
             return self.fallback.propose(history)
 
 
-def build_proposer(use_llm: bool, seed: int = 42):
+def build_proposer(use_llm: bool, seed: int = 42, families: list[str] | None = None):
     if use_llm:
-        return LLMProposer(seed=seed)
-    return DeterministicProposer(seed=seed)
+        return LLMProposer(seed=seed, families=families)
+    return DeterministicProposer(seed=seed, families=families)

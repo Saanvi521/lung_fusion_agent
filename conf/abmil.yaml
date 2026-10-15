@@ -1,0 +1,58 @@
+# ABMIL hyper-parameters, per foundation model.
+#
+# Precedence (later wins):  MILHParams defaults (src/mil/trainer.py)
+#                          < `defaults` below
+#                          < `models.<fm>` below
+#                          < conf/tuned/abmil_<fm>.json   (written by scripts/02g_tune_abmil.py)
+#                          < explicit CLI flags
+#
+# `defaults` follows the published recipe for ABMIL on frozen pathology-FM features
+# (UNI, Chen et al. 2024; MIL-Lab / Shao et al. 2025): FC projection + gated attention,
+# input dropout 0.1, dropout 0.25, AdamW, cosine schedule, early stopping on
+# validation loss — scaled DOWN (proj 256 / attn 128 instead of 512 / 384) because
+# we only have ~110 training slides per cross-fit fold. We accumulate gradients over
+# 4 bags per step, so the learning rate is ~2x the batch-size-1 recipe (1e-4).
+#
+# The per-model entries are starting priors, not tuned values: higher-dimensional
+# features (GenBio-PathFM 4608-d) get a lower learning rate and more input dropout.
+# (Feature standardisation already removes the raw scale differences between FMs.)
+# Run 02g to replace them with values
+# chosen by inner cross-validation on train+val only.
+
+defaults:
+  proj_dim: 256
+  attn_dim: 128
+  dropout_in: 0.1
+  dropout: 0.25
+  lr: 2.0e-4
+  weight_decay: 1.0e-4
+  max_epochs: 50
+  min_epochs: 10
+  patience: 10
+  warmup_epochs: 2
+  accum_steps: 4         # bags per optimizer step (effective batch size)
+  max_train_tiles: 512
+  label_smoothing: 0.0
+  class_weighting: loss
+  grad_clip: 1.0
+  monitor: val_loss
+  standardize: true
+
+models:
+  uni2h: {}
+  virchow2: {}
+  genbio_pathfm:
+    lr: 1.0e-4
+    dropout_in: 0.25
+
+# Search space for scripts/02g_tune_abmil.py (random subset of this grid, fixed budget).
+tuning:
+  budget: 12          # configs per FM, in addition to the prior above
+  n_folds: 5
+  select_by: val_loss # mean held-out cross-entropy (proper scoring rule; less noisy than AUROC on ~34 patients)
+  grid:
+    lr: [1.0e-4, 2.0e-4, 5.0e-4, 1.0e-3]
+    weight_decay: [1.0e-4, 1.0e-2]
+    dropout: [0.25, 0.5]
+    dropout_in: [0.1, 0.3]
+    proj_dim: [128, 256, 512]

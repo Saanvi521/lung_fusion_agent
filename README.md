@@ -14,21 +14,30 @@ Designed to run on free-tier Google Colab/Kaggle GPU. Point Drive-dependent stag
 
 | Stage | Script | What it does |
 |---|---|---|
-| 1 | `src/data/make_split.py` | Builds the patient-level, stratified 70/10/20 train/val/test split; writes `artifacts/splits/`. |
-| 2a | `scripts/02a_tile_slides.py` | Downloads each slide once, builds a tissue mask, tiles at 224×224 (20x), caches tiles to Drive. Run once. |
-| 2b | `scripts/02b_extract_embeddings.py` | Embeds cached tiles with one foundation model, mean-pools to one vector/patient. Run 3x — once per `--model` (`uni2h`, `virchow2`, `genbio_pathfm`). |
-| 2c | `scripts/02c_train_abmil.py` | Trains one ABMIL attention-pooling network per model (superseded by `02d` for reported results — kept for reference). |
-| 2d | `scripts/02d_crossfit_abmil.py` | Cross-fitted ABMIL pooling (fixes a train/test leakage issue in `02c` — see `report.md` §4/§6.1). Produces the ABMIL numbers actually reported. Run 3x, once per model. |
-| 2e | `scripts/02e_plot_training_curve.py` | Diagnostic-only: plots ABMIL's per-epoch train/validation loss curve for one representative cross-fit fold, using `02d`'s own split logic and hyperparameters. Writes to `figures/`. Doesn't affect any results. |
-| 3 | `scripts/03_run_agent.py` | Runs the fusion-strategy search agent (early/late/learned) and the once-only test evaluation. Run once per `--embeddings-dir` (mean-pooled vs. ABMIL cross-fit). |
+| 1 | `src/data/make_split.py` | Patient-level, stratified 70/10/20 split → `artifacts/splits/`. Pass `--repo-id kmmuleelab/Lung_Pathology_Image_JPG` so each patient's slide is the lowest-numbered one **that exists in the repo** (recovers patients whose lowest slide is missing); `--check-against` asserts the patient→split assignment is unchanged. |
+| 2a | `scripts/02a_tile_slides.py` | Downloads each slide once, tissue mask, 224×224 tiles at 20x, caches tiles. Skips patients already tiled. |
+| 2b | `scripts/02b_extract_embeddings.py` | Embeds cached tiles with one FM (`--save-tile-embeds` keeps the tile bags needed by 2d/2g/3-mil). Run once per `--model`. |
+| 2g | `scripts/02g_tune_abmil.py` | **Per-FM ABMIL hyper-parameter search** (budgeted random grid from `conf/abmil.yaml`, 5-fold CV on train+val only, selects by held-out cross-entropy). Writes `conf/tuned/abmil_<fm>.json`. Run once per FM. |
+| 2d | `scripts/02d_crossfit_abmil.py` | Cross-fitted ABMIL per FM using the shared trainer (`src/mil/trainer.py`) and the per-FM hyper-parameters. Saves pooled vectors, cross-fitted head probabilities and the **full per-epoch history (train/val loss, macro AUROC, balanced accuracy) for every fold**. |
+| 2e | `scripts/02e_plot_training_curve.py` | Plots 2d's saved history (no re-training): loss / AUROC / balanced accuracy, train vs validation, all folds + mean. |
+| 3 | `scripts/03_run_agent.py` | Fusion-strategy agent + one-time test evaluation. With `--tile-emb-root` it also searches the `mil` family (attention-MIL fusion of all FMs on tile bags) and adds ABMIL single-FM rows, multi-seed spread, and a paired bootstrap of fused − best single. |
 
-Example:
+Hyper-parameter precedence: `MILHParams` defaults < `conf/abmil.yaml` (`defaults`, then `models.<fm>`) < `conf/tuned/abmil_<fm>.json` < CLI flags.
+
+Example (cluster or Colab, `D` = data folder from 2a/2b):
 ```bash
-python -m scripts.03_run_agent \
-  --split artifacts/splits/split_seed42.csv \
-  --embeddings-dir artifacts/embeddings \
-  --out-dir artifacts/agent_run
+python -m src.data.make_split --csv CLWD.csv --seed 42 --repo-id kmmuleelab/Lung_Pathology_Image_JPG \
+    --check-against artifacts/splits/split_seed42.csv
+for m in uni2h virchow2 genbio_pathfm; do
+  python -m scripts.02g_tune_abmil   --model $m --split artifacts/splits/split_seed42.csv --tile-emb-root $D/tile_embeddings
+  python -m scripts.02d_crossfit_abmil --model $m --split artifacts/splits/split_seed42.csv --tile-emb-root $D/tile_embeddings \
+      --emb-out-dir $D/embeddings_abmil_cf/$m
+done
+python -m scripts.02e_plot_training_curve --history $D/embeddings_abmil_cf/*_history.json --out-dir figures
+python -m scripts.03_run_agent --split artifacts/splits/split_seed42.csv --embeddings-dir $D/embeddings \
+    --tile-emb-root $D/tile_embeddings --families early late learned mil --max-trials 25 --no-improve-patience 8 --out-dir artifacts/agent_run_all
 ```
+`scripts/slurm/abmil.sbatch` wraps the same commands for a SLURM cluster.
 
 `notebooks/lung_agent.ipynb` has all of the above as runnable Colab cells in order.
 
@@ -38,7 +47,8 @@ python -m scripts.03_run_agent \
 conf/               configuration
 src/
   data/              subset selection, tiling, splits
-  embeddings/        one module per foundation model + pooling (mean, ABMIL)
+  embeddings/        one module per foundation model + pooling (mean, ABMIL / multi-stream ABMIL)
+  mil/               tile-bag loading, shared MIL trainer (curves, early stopping), per-FM config
   fusion/            fusion strategies (early/late/learned), registered by name
   agent/             search loop, proposer, decision logging
   eval/              metrics, bootstrap CIs, comparison table
@@ -52,6 +62,7 @@ report.md            full technical report
 ## Key results folders in `artifacts/`
 
 - `artifacts/` (root) — original run on mean-pooled embeddings.
-- `artifacts/agent_run_abmil_cf/` — run on cross-fitted ABMIL embeddings (the ABMIL numbers in the report), plus each model's own-head AUROC (`*_abmil_head_scores.json`).
+- `artifacts/agent_run_abmil_cf/` — run on cross-fitted ABMIL embeddings from the FIRST ABMIL recipe (raw-feature attention, no projection/dropout; superseded).
+- `artifacts/tuning/` — per-FM hyper-parameter search logs (02g); `conf/tuned/` — the selected values.
 
 No API key is required to run the agent.

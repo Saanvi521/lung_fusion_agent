@@ -14,6 +14,18 @@ Three families, matching the brief's minimum viable scope:
            small stacking meta-classifier).
 - learned: a small gated-fusion network that learns, per patient, how much
            to trust each model's stream before classifying.
+- mil:     attention-MIL fusion on the TILE bags of all FMs (src/mil): the FMs are
+           fused inside one ABMIL (tile-level concat, gated attention over FM
+           streams, or jointly-trained late fusion), with age/sex fed to the head
+           and per-FM learning rates from conf/tuned. Only available when the
+           dataset was loaded with tile bags (03_run_agent --tile-emb-root).
+
+Regularisation note: ``C`` may be a number or ``"auto"``. With 1.5k-4.6k
+standardised features and ~130 training patients, logistic regression at C=1 is
+essentially unregularised (the classes are linearly separable), which gives
+over-confident probabilities -- bad for late fusion and for balanced accuracy.
+``"auto"`` picks C per model by inner CV log-loss (LogisticRegressionCV), i.e.
+each FM gets its own regularisation strength.
 
 Every family fits ONLY on the given training indices -- callers (the CV
 evaluator) are responsible for passing train/val splits so nothing here
@@ -21,18 +33,33 @@ can leak.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler, normalize
 
 from src.fusion.data import FusionDataset
 
+# sklearn >=1.8 emits FutureWarnings for LogisticRegressionCV's default arguments on every fit
+warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
+
 MODEL_NAMES = ["uni2h", "virchow2", "genbio_pathfm"]
+C_GRID = [1e-3, 1e-2, 1e-1, 1.0, 10.0]
+
+
+def make_logreg(C) -> LogisticRegression:
+    """Logistic regression with either a fixed C or C chosen by inner 3-fold CV log-loss."""
+    if C == "auto":
+        return LogisticRegressionCV(
+            Cs=C_GRID, cv=StratifiedKFold(3, shuffle=True, random_state=0), scoring="neg_log_loss",
+            class_weight="balanced", max_iter=3000, n_jobs=-1,
+        )
+    return LogisticRegression(C=float(C), max_iter=3000, class_weight="balanced")
 
 
 # ---------------------------------------------------------------------------
@@ -46,14 +73,14 @@ def default_config(family: str) -> dict[str, Any]:
             "family": "early",
             "l2_normalize": True,
             "pca_dim": None,  # e.g. 128, or None to skip
-            "C": 1.0,
+            "C": "auto",
         }
     if family == "late":
         return {
             "family": "late",
-            "combine": "mean",  # "mean" | "weighted" | "stacking"
+            "combine": "mean",  # "mean" | "logmean" | "weighted" | "stacking"
             "weights": None,  # only used if combine == "weighted"
-            "C": 1.0,
+            "C": "auto",
         }
     if family == "learned":
         return {
@@ -64,6 +91,20 @@ def default_config(family: str) -> dict[str, Any]:
             "epochs": 30,
             "lr": 1e-3,
             "n_seeds": 3,  # average logits over this many seeds
+        }
+    if family == "mil":
+        return {
+            "family": "mil",
+            "models": list(MODEL_NAMES),
+            "fusion": "tile_concat",   # "tile_concat" | "gated" | "late"
+            "proj_dim": 256,
+            "dropout": 0.25,
+            "stream_dropout": 0.0,
+            "lr": 2e-4,
+            "weight_decay": 1e-4,
+            "use_meta": True,
+            "per_fm_lr": True,         # each FM's layers use its tuned lr (conf/tuned/abmil_<fm>.json)
+            "n_seeds": 1,
         }
     raise ValueError(f"unknown family: {family}")
 
@@ -111,9 +152,7 @@ class EarlyFusionModel:
     def fit(self, ds: FusionDataset, train_idx: np.ndarray) -> None:
         X = self._build_features(ds, train_idx, fit=True)
         y = ds.y[train_idx]
-        self.clf = LogisticRegression(
-            C=self.config.get("C", 1.0), max_iter=2000, class_weight="balanced"
-        ).fit(X, y)
+        self.clf = make_logreg(self.config.get("C", "auto")).fit(X, y)
 
     def predict_proba(self, ds: FusionDataset, idx: np.ndarray) -> np.ndarray:
         X = self._build_features(ds, idx, fit=False)
@@ -139,9 +178,7 @@ class LateFusionModel:
         meta, self.age_scaler = _metadata_matrix(ds, train_idx, self.age_scaler, fit=(self.age_scaler is None))
         X = np.concatenate([X, meta], axis=1)
         y = ds.y[train_idx]
-        self.per_model_clf[m] = LogisticRegression(
-            C=self.config.get("C", 1.0), max_iter=2000, class_weight="balanced"
-        ).fit(X, y)
+        self.per_model_clf[m] = make_logreg(self.config.get("C", "auto")).fit(X, y)
 
     def _proba_one_model(self, ds: FusionDataset, m: str, idx: np.ndarray) -> np.ndarray:
         X = ds.embeddings[m][idx]
@@ -188,6 +225,14 @@ class LateFusionModel:
 
         if combine == "mean":
             return np.mean(probs, axis=0)
+        if combine == "logmean":
+            # geometric mean of the probabilities (= averaging log-probabilities, i.e. logits up to a
+            # constant; a "product of experts"). Favours classes that ALL models find plausible: a class
+            # any one model gives ~0 is effectively vetoed. Different behaviour from the arithmetic mean,
+            # not uniformly better -- the agent decides between them by CV.
+            lp = np.mean([np.log(np.clip(p, 1e-7, 1)) for p in probs], axis=0)
+            e = np.exp(lp - lp.max(axis=1, keepdims=True))
+            return e / e.sum(axis=1, keepdims=True)
         if combine == "weighted":
             w = self.config.get("weights") or [1 / 3, 1 / 3, 1 / 3]
             w = np.array(w) / sum(w)
@@ -307,8 +352,62 @@ class LearnedFusionModel:
 # Dispatch
 # ---------------------------------------------------------------------------
 
+class MILFusionModel:
+    """Attention-MIL fusion on tile bags (see src/mil). Trains on ``train_idx`` with its own
+    15% stratified early-stopping carve-out, so it fits the same fit/predict contract as
+    the other families and is scored by the same CV evaluator."""
+
+    def __init__(self, config: dict[str, Any]):
+        self.config = config
+        self.results = []
+
+    def _hp(self, seed: int):
+        from src.mil.config import load_conf, resolve_hparams
+        from src.mil.trainer import merge_hparams
+
+        c = self.config
+        if c.get("tuned_single"):
+            # single-FM ABMIL baseline: use that FM's OWN full tuned settings from 02g
+            # (its 13-config search is the single model's tuning budget)
+            (m,) = c["models"]
+            hp = resolve_hparams(m)[0]
+            return merge_hparams(hp.to_dict(), {"use_meta": c.get("use_meta", False), "seed": seed})
+        keys = ["fusion", "proj_dim", "dropout", "stream_dropout", "lr", "weight_decay", "use_meta",
+                "dropout_in", "attn_dim", "max_epochs", "accum_steps", "max_train_tiles", "monitor"]
+        stream_lr = {}
+        if c.get("per_fm_lr", True):
+            for m in c["models"]:
+                stream_lr[m] = resolve_hparams(m)[0].lr
+        return merge_hparams(load_conf().get("defaults", {}), {k: c[k] for k in keys if k in c},
+                             {"stream_lr": stream_lr, "seed": seed})
+
+    def fit(self, ds: FusionDataset, train_idx: np.ndarray) -> None:
+        from sklearn.model_selection import train_test_split
+
+        from src.mil.trainer import train_mil
+
+        if ds.bags is None:
+            raise ValueError("mil family needs tile bags: run 03_run_agent with --tile-emb-root")
+        pids = [ds.patient_ids[i] for i in train_idx]
+        y = ds.y[train_idx]
+        fit_p, es_p = train_test_split(pids, test_size=0.15, stratify=y, random_state=int(self.config.get("seed", 42)))
+        y_by_pid = dict(zip(ds.patient_ids, ds.y.tolist()))
+        meta = {p: np.array([a, s], dtype=np.float32) for p, a, s in zip(ds.patient_ids, ds.age, ds.sex)}
+        self.results = [
+            train_mil(ds.bags, y_by_pid, fit_p, es_p, len(ds.classes), self._hp(int(self.config.get("seed", 42)) + s),
+                      fms=list(self.config["models"]), meta=meta)
+            for s in range(int(self.config.get("n_seeds", 1)))
+        ]
+
+    def predict_proba(self, ds: FusionDataset, idx: np.ndarray) -> np.ndarray:
+        pids = [ds.patient_ids[i] for i in idx]
+        return np.mean([r.predict(pids) for r in self.results], axis=0)
+
+
 def build_model(config: dict[str, Any]):
     family = config["family"]
+    if family == "mil":
+        return MILFusionModel(config=config)
     if family == "early":
         return EarlyFusionModel(config=config)
     if family == "late":

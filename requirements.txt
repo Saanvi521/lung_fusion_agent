@@ -1,11 +1,13 @@
 numpy
 pandas
-scikit-learn
+scikit-learn>=1.3
 scikit-image
 scipy
 Pillow
-torch
+torch>=2.1
 torchvision
 timm
 transformers
 huggingface_hub
+matplotlib
+pyyaml

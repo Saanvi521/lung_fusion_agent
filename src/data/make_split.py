@@ -4,7 +4,12 @@ Pipeline
 --------
 1. Read CLWD.csv (one row per slide).
 2. Group by ``SampleNumber`` (this MERGES the duplicated ID 8377886 into one patient).
-3. Keep one slide per patient: the lowest numeric WSI_ID (deterministic rule).
+3. Keep one slide per patient: the lowest numeric WSI_ID *among the slides that
+   actually exist in the image repo* (deterministic rule). The released repo has
+   386 JPGs for 408 CSV rows; the first version ignored this and silently lost 12
+   patients whose lowest-numbered slide is missing, although 7 of them have other
+   slides that ARE in the repo (incl. 2 of the 15 Cribriform patients). Pass
+   ``--repo-id`` (or ``--available-wsi``) so the rule skips missing files.
 4. Patient label = the selected slide's ``Tumor Subtype``. Patients whose slides
    disagree on subtype are flagged (``label_conflict``) so a sensitivity run can
    exclude them.
@@ -38,19 +43,34 @@ def _wsi_number(wsi_id: str) -> int:
     return int(str(wsi_id).split("-")[-1])
 
 
-def build_patient_table(df: pd.DataFrame) -> pd.DataFrame:
+def list_available_wsi(repo_id: str | None = None, available_file: Path | None = None) -> set[str] | None:
+    """Slide ids (file stems, e.g. 'WSI-35') that exist in the image repo, or None if unknown."""
+    if available_file is not None:
+        return {ln.strip() for ln in Path(available_file).read_text().splitlines() if ln.strip()}
+    if repo_id is not None:
+        from huggingface_hub import list_repo_files
+
+        files = list_repo_files(repo_id, repo_type="dataset")
+        return {Path(f).stem for f in files if f.lower().endswith((".jpg", ".jpeg"))}
+    return None
+
+
+def build_patient_table(df: pd.DataFrame, available: set[str] | None = None) -> pd.DataFrame:
     """Collapse slide-level rows to one row per patient (group)."""
     df = df.copy()
     df[GROUP_COL] = df[GROUP_COL].astype(str).str.strip()
     df["wsi_num"] = df["WSI_ID"].map(_wsi_number)
+    # 0 = image exists (preferred), 1 = missing from the repo; unknown availability -> all 0
+    df["missing_file"] = 0 if available is None else (~df["WSI_ID"].astype(str).isin(available)).astype(int)
 
     # Quirk 2: detect patients with conflicting labels across their slides.
     n_labels = df.groupby(GROUP_COL)[LABEL_COL].nunique()
     conflict_ids = set(n_labels[n_labels > 1].index)
     n_slides = df.groupby(GROUP_COL).size().rename("n_slides")
 
-    # Deterministic selection: lowest numeric WSI_ID per patient.
-    sel = df.sort_values(["wsi_num"]).groupby(GROUP_COL, as_index=False).head(1)
+    # Deterministic selection: lowest numeric WSI_ID per patient among slides whose image exists.
+    lowest_any = df.sort_values("wsi_num").groupby(GROUP_COL)["WSI_ID"].first()
+    sel = df.sort_values(["missing_file", "wsi_num"]).groupby(GROUP_COL, as_index=False).head(1)
     sel = sel.merge(n_slides, left_on=GROUP_COL, right_index=True)
 
     out = pd.DataFrame(
@@ -63,6 +83,10 @@ def build_patient_table(df: pd.DataFrame) -> pd.DataFrame:
             "diagnosis": sel.get("Pathological_Diagnosis", pd.Series(index=sel.index)).values,
             "n_slides_available": sel["n_slides"].values,
             "label_conflict": sel[GROUP_COL].isin(conflict_ids).values,
+            "image_available": (sel["missing_file"] == 0).values,
+            "substituted_from": [
+                lowest_any[g] if lowest_any[g] != w else "" for g, w in zip(sel[GROUP_COL], sel["WSI_ID"])
+            ],
         }
     )
     return out.sort_values("patient_id").reset_index(drop=True)
@@ -135,13 +159,32 @@ def main() -> None:
     ap.add_argument("--csv", required=True, type=Path)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out-dir", type=Path, default=Path("artifacts/splits"))
+    ap.add_argument("--repo-id", default=None,
+                    help="e.g. kmmuleelab/Lung_Pathology_Image_JPG: list its JPGs so missing slides are skipped")
+    ap.add_argument("--available-wsi", type=Path, default=None, help="text file of available slide ids, one per line")
+    ap.add_argument("--check-against", type=Path, default=None,
+                    help="existing split CSV; assert every patient keeps the same split (only slide choice may change)")
     args = ap.parse_args()
 
     raw = pd.read_csv(args.csv)
-    patients = build_patient_table(raw)
+    available = list_available_wsi(args.repo_id, args.available_wsi)
+    patients = build_patient_table(raw, available)
     bias_report = selection_bias_report(raw, patients)
     patients = assign_splits(patients, args.seed)
     sanity_checks(patients)
+    if args.check_against is not None:
+        old = pd.read_csv(args.check_against, dtype={"patient_id": str}).set_index("patient_id")["split"]
+        new = patients.set_index("patient_id")["split"]
+        changed = [p for p in new.index if p in old.index and old[p] != new[p]]
+        assert not changed and set(old.index) == set(new.index), f"split assignment changed for {changed[:10]}"
+        print(f"Split assignment identical to {args.check_against} for all {len(new)} patients.")
+    subs = patients[patients["substituted_from"] != ""]
+    if len(subs):
+        print(f"{len(subs)} patients use a different slide because their lowest-numbered one is not in the repo:")
+        print(subs[["patient_id", "substituted_from", "wsi_id", "subtype", "split"]].to_string(index=False))
+    still_missing = patients[~patients["image_available"]]
+    if available is not None and len(still_missing):
+        print(f"{len(still_missing)} patients have NO slide in the repo: {still_missing['patient_id'].tolist()}")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     out_csv = args.out_dir / f"split_seed{args.seed}.csv"
@@ -155,10 +198,14 @@ def main() -> None:
         "subtype_by_split": pd.crosstab(patients["subtype"], patients["split"]).to_dict(),
         "n_label_conflict_patients": int(patients["label_conflict"].sum()),
         "input_csv_sha256": hashlib.sha256(args.csv.read_bytes()).hexdigest(),
-        "selection_rule": "lowest numeric WSI_ID per SampleNumber",
+        "selection_rule": "lowest numeric WSI_ID per SampleNumber among slides present in the repo",
         "duplicate_id_policy": "grouped by SampleNumber string, so repeated IDs merge into one patient",
         "label_policy": "label of the selected slide; conflicts flagged in label_conflict",
         "selection_bias_check": bias_report,
+        "image_availability_checked": available is not None,
+        "n_slides_available_in_repo": None if available is None else len(available),
+        "n_patients_substituted_slide": int((patients["substituted_from"] != "").sum()),
+        "n_patients_without_any_slide": int((~patients["image_available"]).sum()),
     }
     (args.out_dir / f"split_seed{args.seed}.json").write_text(json.dumps(meta, indent=2))
 

@@ -26,12 +26,14 @@ class FusionDataset:
     y: np.ndarray  # (n_patients,) int class index
     classes: list[str]
     split: np.ndarray  # (n_patients,) "train" / "val" / "test"
+    bags: dict | None = None  # {pid: {fm: (N_tiles, D)}} -- only when tile bags were loaded (mil family)
 
 
 def load_fusion_dataset(
     split_csv: Path,
     embeddings_dir: Path,
     model_names: list[str] = MODEL_NAMES,
+    tile_emb_root: Path | None = None,
 ) -> FusionDataset:
     df = pd.read_csv(split_csv)
     classes = sorted(df[LABEL_COL].unique().tolist())
@@ -54,6 +56,16 @@ def load_fusion_dataset(
         print(f"[data] dropping {n_dropped} patients missing at least one model's embedding")
 
     df = df[keep_mask].reset_index(drop=True)
+
+    bags = None
+    if tile_emb_root is not None:
+        from src.mil.bags import load_bags
+
+        bags = load_bags(Path(tile_emb_root), model_names, df["patient_id"].astype(str).tolist())
+        has_bag = df["patient_id"].astype(str).isin(bags)
+        if (~has_bag).any():
+            print(f"[data] dropping {int((~has_bag).sum())} more patients without tile bags for every model")
+        df = df[has_bag].reset_index(drop=True)
     patient_ids = df["patient_id"].astype(str).tolist()
 
     emb_arrays: dict[str, np.ndarray] = {}
@@ -74,4 +86,5 @@ def load_fusion_dataset(
         y=y,
         classes=classes,
         split=split,
+        bags=bags,
     )
