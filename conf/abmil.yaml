@@ -47,12 +47,18 @@ models:
 
 # Search space for scripts/02g_tune_abmil.py (random subset of this grid, fixed budget).
 tuning:
-  budget: 12          # configs per FM, in addition to the prior above
+  budget: 16          # configs per FM, in addition to the prior above
   n_folds: 5
   select_by: val_loss # mean held-out cross-entropy (proper scoring rule; less noisy than AUROC on ~34 patients)
+  # v3 grid: the first real run showed validation loss bottoming out at epochs 3-15 and then rising
+  # while validation AUROC stayed flat, i.e. the networks became OVER-CONFIDENT rather than worse at
+  # ranking. The grid therefore adds the standard remedies: label smoothing, stronger random tile
+  # sub-sampling per step (bag augmentation), stronger weight decay, and smaller projections.
   grid:
-    lr: [1.0e-4, 2.0e-4, 5.0e-4, 1.0e-3]
-    weight_decay: [1.0e-4, 1.0e-2]
+    lr: [5.0e-5, 1.0e-4, 2.0e-4]
+    weight_decay: [1.0e-4, 1.0e-2, 5.0e-2]
     dropout: [0.25, 0.5]
     dropout_in: [0.1, 0.3]
-    proj_dim: [128, 256, 512]
+    proj_dim: [64, 128, 256]
+    label_smoothing: [0.0, 0.1]
+    max_train_tiles: [256, 512]

@@ -64,11 +64,13 @@ SEARCH_SPACE = {
     # attention-MIL fusion on tile bags; only searched when bags are loaded
     "mil": {
         "fusion": ["tile_concat", "gated", "late"],
-        "proj_dim": [128, 256],
+        "proj_dim": [64, 128, 256],
         "dropout": [0.25, 0.5],
-        "stream_dropout": [0.0, 0.2],
-        "lr": [1e-4, 2e-4, 5e-4],
-        "weight_decay": [1e-4, 1e-2],
+        "stream_dropout": [0.0, 0.2, 0.4],
+        "lr": [5e-5, 1e-4, 2e-4],
+        "weight_decay": [1e-4, 1e-2, 5e-2],
+        "label_smoothing": [0.0, 0.1],
+        "max_train_tiles": [256, 512],
     },
 }
 

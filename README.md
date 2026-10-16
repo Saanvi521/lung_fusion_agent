@@ -22,6 +22,8 @@ Designed to run on free-tier Google Colab/Kaggle GPU. Point Drive-dependent stag
 | 2e | `scripts/02e_plot_training_curve.py` | Plots 2d's saved history (no re-training): loss / AUROC / balanced accuracy, train vs validation, all folds + mean. |
 | 3 | `scripts/03_run_agent.py` | Fusion-strategy agent + one-time test evaluation. With `--tile-emb-root` it also searches the `mil` family (attention-MIL fusion of all FMs on tile bags) and adds ABMIL single-FM rows, multi-seed spread, and a paired bootstrap of fused − best single. |
 
+| 4 | `scripts/04_plot_fusion_variants.py` | Visual comparison of the fusion strategies (no test use): the agent's search (CV AUROC of every trial, by family) and the per-epoch train/val curves of the three attention-MIL fusion variants overlaid. |
+
 Hyper-parameter precedence: `MILHParams` defaults < `conf/abmil.yaml` (`defaults`, then `models.<fm>`) < `conf/tuned/abmil_<fm>.json` < CLI flags.
 
 Example (cluster or Colab, `D` = data folder from 2a/2b):

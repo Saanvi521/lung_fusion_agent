@@ -187,17 +187,20 @@ class _RowCache:
         if self.folder:
             self.folder.mkdir(parents=True, exist_ok=True)
 
-    def __call__(self, name: str, fn):
+    def __call__(self, name: str, fn, signature=None):
         if self.folder is None:
             return fn()
+        sig = json.dumps(signature, sort_keys=True, default=str)
         f = self.folder / (name.replace(" ", "_").replace("/", "-").replace("(", "").replace(")", "") + ".json")
         if f.exists():
             r = json.loads(f.read_text())
-            r["_proba"] = np.array(r["_proba"])
-            print(f"[test] {r['row']}: loaded from {f.name} (AUROC={r['macro_auroc']:.4f})")
-            return r
+            if r.get("_sig", sig) == sig:  # same config as the cached row -> reuse
+                r["_proba"] = np.array(r["_proba"])
+                print(f"[test] {r['row']}: loaded from {f.name} (AUROC={r['macro_auroc']:.4f})")
+                return r
+            print(f"[test] {name}: cached row was made with a different config -- recomputing")
         r = fn()
-        f.write_text(json.dumps({**r, "_proba": r["_proba"].tolist()}))
+        f.write_text(json.dumps({**r, "_proba": r["_proba"].tolist(), "_sig": sig}, default=str))
         return r
 
 
@@ -215,10 +218,12 @@ def build_comparison_table(agent_best_config: dict, ds: FusionDataset, model_nam
         # settings from 02g (per-FM search) -- the single-model counterpart of the agent's search
         for m in model_names:
             cfg = {"family": "mil", "models": [m], "tuned_single": True}
+            from src.mil.config import resolve_hparams
+            sig = [resolve_hparams(m)[0].to_dict(), final_seeds]
             rows.append(cached(f"{m}_alone_ABMIL", lambda cfg=cfg, m=m: eval_config(
-                {**cfg, "use_meta": False}, ds, f"{m} alone [ABMIL]", final_seeds)))
+                {**cfg, "use_meta": False}, ds, f"{m} alone [ABMIL]", final_seeds), sig))
             r = cached(f"{m}_meta_ABMIL", lambda cfg=cfg, m=m: eval_config(
-                {**cfg, "use_meta": True}, ds, f"{m} + metadata [ABMIL]", final_seeds))
+                {**cfg, "use_meta": True}, ds, f"{m} + metadata [ABMIL]", final_seeds), sig)
             rows.append(r)
             single_meta.append(r)
 
@@ -229,7 +234,8 @@ def build_comparison_table(agent_best_config: dict, ds: FusionDataset, model_nam
     pool = [r for r in single_meta if r["row"].endswith(tag)]
     best_single = max(pool or single_meta, key=lambda r: r["macro_auroc"])
     rows.append({**best_single, "row": f"best single model + metadata ({best_single['row']})"})
-    fused = cached("fused", lambda: eval_config(agent_best_config, ds, "fused (agent-selected) + metadata", final_seeds))
+    fused = cached("fused", lambda: eval_config(agent_best_config, ds, "fused (agent-selected) + metadata", final_seeds),
+                   [agent_best_config, final_seeds])
     test_idx = np.where(ds.split == "test")[0]
     fused["vs_best_single"] = paired_bootstrap_delta(ds.y[test_idx], fused["_proba"], best_single["_proba"])
     rows.append(fused)

@@ -79,6 +79,25 @@ def _is_significant_improvement(candidate: EvalResult, incumbent: EvalResult) ->
     return mean_diff > se_diff
 
 
+def describe(config: dict) -> str:
+    """One-line human-readable name of a candidate, e.g. 'mil:tile_concat lr=1e-04 proj=128 ...'."""
+    f = config.get("family")
+    if f == "mil":
+        return (f"mil:{config.get('fusion', 'tile_concat')} lr={config.get('lr', 0):.0e} proj={config.get('proj_dim')} "
+                f"drop={config.get('dropout')} stream_drop={config.get('stream_dropout')} wd={config.get('weight_decay', 0):.0e} "
+                f"ls={config.get('label_smoothing', 0)} tiles={config.get('max_train_tiles', 512)}")
+    if f == "late":
+        w = f" w={config.get('weights')}" if config.get("combine") == "weighted" else ""
+        return f"late:{config.get('combine')}{w} C={config.get('C')}"
+    if f == "early":
+        return (f"early:{'L2' if config.get('l2_normalize') else 'noL2'}"
+                f"{' PCA=' + str(config['pca_dim']) if config.get('pca_dim') else ''} C={config.get('C')}")
+    if f == "learned":
+        return (f"learned hidden={config.get('hidden_dim')} drop={config.get('dropout')} "
+                f"wd={config.get('weight_decay')} epochs={config.get('epochs')}")
+    return str(f)
+
+
 class _TrialCache:
     """Every finished trial's CV result is appended to ``trial_cache.jsonl`` next to the decision
     log. If the run dies (Colab disconnect), rerunning the same command replays the search: the
@@ -141,7 +160,7 @@ def run_agent(
                 cache.put(key, result)
         except Exception as e:  # noqa: BLE001 -- one bad config (e.g. torch missing for
             # "learned") should not end a 35-trial search; log it and move on.
-            print(f"[trial {trial_idx}/{agent_config.max_trials}] {config.get('family')} FAILED: {e} -- skipping")
+            print(f"[trial {trial_idx}/{agent_config.max_trials}] {describe(config)} FAILED: {e} -- skipping")
             log.log_trial(
                 trial_idx=trial_idx,
                 proposer_name=proposer.name,
@@ -193,8 +212,8 @@ def run_agent(
         )
 
         print(
-            f"[trial {trial_idx}/{agent_config.max_trials}] {config['family']} "
-            f"auroc={result.mean_auroc:.4f}+-{result.std_auroc:.4f} "
+            f"[trial {trial_idx:2d}/{agent_config.max_trials}] {describe(config):<70} "
+            f"CV AUROC={result.mean_auroc:.4f}+-{result.std_auroc:.4f} bAcc={result.mean_bal_acc:.3f} "
             f"{'ACCEPTED' if accepted else 'rejected'} (incumbent={incumbent_result.mean_auroc:.4f})"
         )
 

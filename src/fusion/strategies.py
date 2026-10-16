@@ -97,11 +97,17 @@ def default_config(family: str) -> dict[str, Any]:
             "family": "mil",
             "models": list(MODEL_NAMES),
             "fusion": "tile_concat",   # "tile_concat" | "gated" | "late"
-            "proj_dim": 256,
+            # v2 defaults: the first run's fused model over-fitted after ~4 epochs (validation loss
+            # rose while train loss -> 0). Three FMs x 256-d projections is ~2.8M parameters, so the
+            # fused default uses a 128-d projection per FM, the learning rate the per-FM search chose
+            # (1e-4, not 2e-4), and modality dropout. Chosen from TRAINING curves only (no test use).
+            "proj_dim": 128,
             "dropout": 0.25,
-            "stream_dropout": 0.0,
-            "lr": 2e-4,
-            "weight_decay": 1e-4,
+            "stream_dropout": 0.2,
+            "lr": 1e-4,
+            "weight_decay": 1e-2,
+            "label_smoothing": 0.1,     # curbs the over-confidence that makes validation loss climb
+            "max_train_tiles": 256,    # stronger bag augmentation: a random 256 of ~600 tiles per step
             "use_meta": True,
             "per_fm_lr": True,         # each FM's layers use its tuned lr (conf/tuned/abmil_<fm>.json)
             "n_seeds": 1,
@@ -373,7 +379,8 @@ class MILFusionModel:
             hp = resolve_hparams(m)[0]
             return merge_hparams(hp.to_dict(), {"use_meta": c.get("use_meta", False), "seed": seed})
         keys = ["fusion", "proj_dim", "dropout", "stream_dropout", "lr", "weight_decay", "use_meta",
-                "dropout_in", "attn_dim", "max_epochs", "accum_steps", "max_train_tiles", "monitor"]
+                "dropout_in", "attn_dim", "max_epochs", "accum_steps", "max_train_tiles", "monitor",
+                "label_smoothing"]
         stream_lr = {}
         if c.get("per_fm_lr", True):
             for m in c["models"]:
