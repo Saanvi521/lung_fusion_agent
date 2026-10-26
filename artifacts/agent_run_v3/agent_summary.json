@@ -1,0 +1,26 @@
+{
+  "best_config": {
+    "family": "mil",
+    "models": [
+      "uni2h",
+      "virchow2",
+      "genbio_pathfm"
+    ],
+    "fusion": "tile_concat",
+    "proj_dim": 128,
+    "dropout": 0.25,
+    "stream_dropout": 0.2,
+    "lr": 0.0001,
+    "weight_decay": 0.01,
+    "label_smoothing": 0.1,
+    "max_train_tiles": 256,
+    "use_meta": true,
+    "per_fm_lr": true,
+    "n_seeds": 1
+  },
+  "n_trials_run": 11,
+  "families": [
+    "mil"
+  ],
+  "seed": 42
+}
