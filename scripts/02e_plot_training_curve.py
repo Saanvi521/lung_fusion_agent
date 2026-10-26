@@ -33,14 +33,12 @@ def _mean_curve(folds: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
     for i, f in enumerate(folds):
         v = [h[key] for h in f["history"]]
         mat[i, : len(v)] = v
-    # only draw the mean while at least half the folds are still training; after that
-    # the "mean" is one or two folds and jumps around (folds stop at different epochs)
-    alive = (~np.isnan(mat)).sum(0)
-    # mean/sd only while EVERY run is still training; averaging fewer runs makes the line jump
-    # whenever a run early-stops (survivorship artefact). Individual runs are still drawn thinly.
-    L = int(np.max(np.nonzero(alive == len(folds))[0])) + 1
+        # a run that early-stopped is frozen from then on, so it is held at its last logged
+        # value until the longest run ends. Averaging only the runs still going would make the
+        # mean jump whenever one stops; cutting the mean at the shortest run would hide the rest.
+        mat[i, len(v):] = v[-1]
     with np.errstate(all="ignore"):
-        return np.nanmean(mat[:, :L], 0), np.nanstd(mat[:, :L], 0)
+        return np.nanmean(mat, 0), np.nanstd(mat, 0)
 
 
 def plot_history(hist: dict, out_png: Path) -> dict:
@@ -50,15 +48,19 @@ def plot_history(hist: dict, out_png: Path) -> dict:
     for ax, (metric, label) in zip(axes, PANELS):
         for split in ("train", "val"):
             key = f"{split}_{metric}"
+            last_ep = max(len(f["history"]) for f in folds) - 1
             for f in folds:
                 ep = [h["epoch"] for h in f["history"]]
-                ax.plot(ep, [h[key] for h in f["history"]], color=COLORS[split], alpha=0.22, lw=1)
+                ys = [h[key] for h in f["history"]]
+                ax.plot(ep, ys, color=COLORS[split], alpha=0.22, lw=1)
+                if ep[-1] < last_ep:  # stopped early: dotted = held at its last value (what the mean uses)
+                    ax.plot([ep[-1], last_ep], [ys[-1], ys[-1]], color=COLORS[split], alpha=0.22, lw=1, ls=":")
                 b = f["best_epoch"]
                 ax.scatter([b], [f["history"][b][key]], color=COLORS[split], s=14, zorder=3)
             mu, sd = _mean_curve(folds, key)
             x = np.arange(len(mu))
             name = "train" if split == "train" else "validation (early-stop set)"
-            ax.plot(x, mu, color=COLORS[split], lw=2.4, label=f"{name}, mean of {len(folds)} runs")
+            ax.plot(x, mu, color=COLORS[split], lw=2.4, label=f"{name}, mean of {len(folds)} runs*")
             ax.fill_between(x, mu - sd, mu + sd, color=COLORS[split], alpha=0.10)
         ax.set_xlabel("Epoch")
         ax.set_title(label)
@@ -87,7 +89,9 @@ def plot_history(hist: dict, out_png: Path) -> dict:
         f"dropout {hp['dropout_in']}/{hp['dropout']}, accum {hp['accum_steps']}  |  {tail}",
         fontsize=10,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.text(0.01, 0.01, "* thin lines = individual runs; a run that early-stopped is held at its last value (dotted) "
+             "so the mean covers every run until the longest one ends", fontsize=8, color="#555555")
+    fig.tight_layout(rect=(0, 0.04, 1, 0.93))
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=150)
     plt.close(fig)

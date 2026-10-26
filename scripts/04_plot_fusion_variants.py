@@ -63,12 +63,12 @@ def mean_band(folds: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
     for i, f in enumerate(folds):
         v = [h[key] for h in f["history"]]
         m[i, : len(v)] = v
-    alive = (~np.isnan(m)).sum(0)
-    # mean/sd only while EVERY run is still training; averaging fewer runs makes the line jump
-    # whenever a run early-stops (survivorship artefact). Individual runs are still drawn thinly.
-    L = int(np.max(np.nonzero(alive == len(folds))[0])) + 1
+        # a run that early-stopped is frozen from then on, so it is held at its last logged
+        # value until the longest run ends. Averaging only the runs still going would make the
+        # mean jump whenever one stops; cutting the mean at the shortest run would hide the rest.
+        m[i, len(v):] = v[-1]
     with np.errstate(all="ignore"):
-        return np.nanmean(m[:, :L], 0), np.nanstd(m[:, :L], 0)
+        return np.nanmean(m, 0), np.nanstd(m, 0)
 
 
 def plot_variants(curves: dict[str, dict], winner: str | None, out_png: Path) -> None:
@@ -92,7 +92,7 @@ def plot_variants(curves: dict[str, dict], winner: str | None, out_png: Path) ->
             ax.set_ylim(0, 1.02)
     axes[0].legend(fontsize=8, loc="upper right")
     fig.suptitle("Attention-MIL fusion variants — solid: validation (mean ± sd over seeds), dotted: train  "
-                 "| trained on train+val, test not used", fontsize=10)
+                 "| trained on train+val, test not used | seeds that stop early are held at their last value", fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(out_png, dpi=150)
     plt.close(fig)
