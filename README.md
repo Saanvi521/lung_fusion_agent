@@ -8,7 +8,7 @@ Predicts a 7-class lung adenocarcinoma histologic subtype from whole-slide image
 pip install -r requirements.txt
 ```
 
-Designed to run on free-tier Google Colab/Kaggle GPU. Point Drive-dependent stages (`02a`, `02b`, `02c`, `02d`) at a mounted Drive path so embeddings persist across Colab sessions — see each script's own docstring for exact mount instructions.
+Designed to run on free-tier Google Colab/Kaggle GPU. Point Drive-dependent stages (`02a`, `02b`, `02g`, `02d`, `03`, `04`) at a mounted Drive path so embeddings persist across Colab sessions — see each script's own docstring for exact mount instructions.
 
 ## Pipeline (run in order)
 
@@ -26,22 +26,30 @@ Designed to run on free-tier Google Colab/Kaggle GPU. Point Drive-dependent stag
 
 Hyper-parameter precedence: `MILHParams` defaults < `conf/abmil.yaml` (`defaults`, then `models.<fm>`) < `conf/tuned/abmil_<fm>.json` < CLI flags.
 
-Example (cluster or Colab, `D` = data folder from 2a/2b):
+Final (v3) run, exactly as in the notebook (`D` = data folder on Drive from 2a/2b, `S` = the split):
 ```bash
-python -m src.data.make_split --csv CLWD.csv --seed 42 --repo-id kmmuleelab/Lung_Pathology_Image_JPG \
-    --check-against artifacts/splits/split_seed42.csv
+S=artifacts/splits/split_seed42.csv
+python -m src.data.make_split --csv CLWD.csv --seed 42 --repo-id kmmuleelab/Lung_Pathology_Image_JPG --check-against $S
+export ABMIL_TUNED_DIR=$D/tuned_v3          # where 02g writes / everything else reads the per-FM settings
 for m in uni2h virchow2 genbio_pathfm; do
-  python -m scripts.02g_tune_abmil   --model $m --split artifacts/splits/split_seed42.csv --tile-emb-root $D/tile_embeddings
-  python -m scripts.02d_crossfit_abmil --model $m --split artifacts/splits/split_seed42.csv --tile-emb-root $D/tile_embeddings \
-      --emb-out-dir $D/embeddings_abmil_cf/$m
+  python -m scripts.02a_tile_slides --split $S --out-dir $D --repo-id kmmuleelab/Lung_Pathology_Image_JPG   # once; skips done slides
+  python -m scripts.02b_extract_embeddings --model $m --split $S --out-dir $D --save-tile-embeds
+  python -m scripts.02g_tune_abmil --model $m --split $S --tile-emb-root $D/tile_embeddings --log-dir $D/tuning_v3
+  python -m scripts.02d_crossfit_abmil --model $m --split $S --tile-emb-root $D/tile_embeddings --emb-out-dir $D/embeddings_abmil_v3/$m
 done
-python -m scripts.02e_plot_training_curve --history $D/embeddings_abmil_cf/*_history.json --out-dir figures
-python -m scripts.03_run_agent --split artifacts/splits/split_seed42.csv --embeddings-dir $D/embeddings \
-    --tile-emb-root $D/tile_embeddings --families early late learned mil --max-trials 25 --no-improve-patience 8 --out-dir artifacts/agent_run_all
+python -m scripts.02e_plot_training_curve --history $D/embeddings_abmil_v3/*_history.json --out-dir $D/figures_v3
+python -m scripts.03_run_agent --split $S --embeddings-dir $D/embeddings --tile-emb-root $D/tile_embeddings \
+    --families mil --max-trials 20 --no-improve-patience 8 --final-seeds 3 --out-dir $D/agent_run_v3
+python -m scripts.04_plot_fusion_variants --split $S --embeddings-dir $D/embeddings --tile-emb-root $D/tile_embeddings \
+    --run-dir $D/agent_run_v3 --out-dir $D/figures_v3/fusion
+python -m scripts.02e_plot_training_curve --history $D/agent_run_v3/curves/*_history.json --out-dir $D/figures_v3/final
 ```
+The earlier full-search run (run 1, `--families early late learned mil --max-trials 25`) covered all four fusion families;
+its results are kept in `artifacts/agent_run_v2_first_test_look/`. No API key is needed: without one the agent uses its
+deterministic proposer.
 `scripts/slurm/abmil.sbatch` wraps the same commands for a SLURM cluster.
 
-`notebooks/lung_agent.ipynb` has all of the above as runnable Colab cells in order.
+`notebooks/lung_agent.ipynb` has all of the above as runnable Colab cells in order (Parts 0–8; Part 8 prints the report numbers and packages the results).
 
 ## Repository layout
 
@@ -61,10 +69,18 @@ figures/             plots referenced in report.md (ABMIL training curves, agent
 report.md            full technical report
 ```
 
-## Key results folders in `artifacts/`
+## Key results (committed)
 
-- `artifacts/` (root) — original run on mean-pooled embeddings.
-- `artifacts/agent_run_abmil_cf/` — run on cross-fitted ABMIL embeddings from the FIRST ABMIL recipe (raw-feature attention, no projection/dropout; superseded).
-- `artifacts/tuning/` — per-FM hyper-parameter search logs (02g); `conf/tuned/` — the selected values.
+| Path | What |
+|---|---|
+| `artifacts/splits/` | the fixed patient → split assignment (seed 42) |
+| `artifacts/extraction_stats.json` | embedding size, wall-clock time and slide count per FM |
+| `artifacts/tuning_v3/`, `conf/tuned/` | per-FM ABMIL search logs (02g) and the selected settings |
+| `artifacts/abmil_v3/` | per-fold, per-epoch training histories of the per-FM ABMIL models (02d) |
+| `artifacts/agent_run_v3/` | **final run**: `decision_log.jsonl` (every trial, score, accept/reject reason), `agent_summary.json`, `comparison_table.json` (test rows with bootstrap CIs, per-class AUROC, confusion matrices, seed spread, paired bootstrap), final-model and fusion-variant curves |
+| `artifacts/agent_run_v2_first_test_look/` | run 1 (all four fusion families searched); its test numbers are reported alongside the final run |
+| `artifacts/` (root), `artifacts/agent_run_abmil_cf/` | run 0 (mean pooling; first ABMIL recipe); superseded |
+| `figures/` | per-FM training curves; `figures/final/` final-model curves; `figures/fusion/` agent search + fusion-variant curves |
+| `requirements.lock` | exact package versions of the Colab environment the final run used |
 
 No API key is required to run the agent.

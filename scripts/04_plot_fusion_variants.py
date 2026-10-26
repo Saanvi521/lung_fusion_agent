@@ -64,7 +64,9 @@ def mean_band(folds: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
         v = [h[key] for h in f["history"]]
         m[i, : len(v)] = v
     alive = (~np.isnan(m)).sum(0)
-    L = int(np.max(np.nonzero(alive >= max(1, int(np.ceil(len(folds) / 2))))[0])) + 1
+    # mean/sd only while EVERY run is still training; averaging fewer runs makes the line jump
+    # whenever a run early-stops (survivorship artefact). Individual runs are still drawn thinly.
+    L = int(np.max(np.nonzero(alive == len(folds))[0])) + 1
     with np.errstate(all="ignore"):
         return np.nanmean(m[:, :L], 0), np.nanstd(m[:, :L], 0)
 

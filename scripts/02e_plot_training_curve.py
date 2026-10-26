@@ -36,7 +36,9 @@ def _mean_curve(folds: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
     # only draw the mean while at least half the folds are still training; after that
     # the "mean" is one or two folds and jumps around (folds stop at different epochs)
     alive = (~np.isnan(mat)).sum(0)
-    L = int(np.max(np.nonzero(alive >= max(1, int(np.ceil(len(folds) / 2))))[0])) + 1
+    # mean/sd only while EVERY run is still training; averaging fewer runs makes the line jump
+    # whenever a run early-stops (survivorship artefact). Individual runs are still drawn thinly.
+    L = int(np.max(np.nonzero(alive == len(folds))[0])) + 1
     with np.errstate(all="ignore"):
         return np.nanmean(mat[:, :L], 0), np.nanstd(mat[:, :L], 0)
 
