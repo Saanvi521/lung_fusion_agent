@@ -5,7 +5,8 @@ Two figures, no test-set use:
 1. ``fusion_variants_curves.png`` -- training curves (validation loss, macro AUROC,
    balanced accuracy per epoch) of the three attention-MIL fusion variants
    (tile_concat / gated / late) overlaid. For each variant we take its best-scoring
-   configuration from the agent's decision log and train it on train+val with the
+   configuration from the agent's decision log (for the SELECTED variant: the config the agent
+   actually selected) and train it on train+val with the
    usual 15% early-stopping carve-out, ``--seeds`` times. Lines = mean over seeds,
    bands = +/- sd. Logistic-regression families have no epochs, so no curves.
 
@@ -80,7 +81,7 @@ def plot_variants(curves: dict[str, dict], winner: str | None, out_png: Path) ->
             lw = 2.8 if v == winner else 1.6
             mu, sd = mean_band(c["folds"], f"val_{metric}")
             x = np.arange(len(mu))
-            lab = f"{v} (CV AUROC {c['cv_auroc']:.3f}){'  <- selected' if v == winner else ''}"
+            lab = f"{v}, trial {c.get('trial')} (CV AUROC {c['cv_auroc']:.3f}){'  <- selected' if v == winner else ''}"
             ax.plot(x, mu, color=col, lw=lw, label=lab)
             ax.fill_between(x, mu - sd, mu + sd, color=col, alpha=0.12)
             tr, _ = mean_band(c["folds"], f"train_{metric}")
@@ -150,16 +151,36 @@ def main() -> None:
     best = best_per_variant(trials)
     summary = json.loads((args.run_dir / "agent_summary.json").read_text())
     winner = summary["best_config"].get("fusion") if summary["best_config"].get("family") == "mil" else None
+    if winner:
+        # the selected variant is shown with the config the agent actually SELECTED (its last
+        # accepted trial), not with that variant's highest-scoring trial, which may have been
+        # rejected by the 1-SE rule (v3: trial 11 scored 0.900 but trial 1 was selected)
+        accepted = [t for t in trials if t["accepted"] and t["config"].get("family") == "mil"
+                    and t["config"].get("fusion") == winner]
+        if accepted:
+            best[winner] = accepted[-1]
     cache = args.run_dir / "curves_variants"
     cache.mkdir(exist_ok=True)
     ds = None
     curves = {}
+    fused_hist = args.run_dir / "curves" / "fused_history.json"
     for v, t in sorted(best.items()):
+        if v == winner and fused_hist.exists():
+            # the selected config was already trained on train+val with the same 3 seeds for the
+            # final evaluation (03_run_agent): reuse exactly those curves -- no retraining
+            c = json.loads(fused_hist.read_text())
+            c["cv_auroc"], c["trial"] = t["mean_auroc"], t["trial"]
+            curves[v] = c
+            print(f"[{v}] selected config (trial {t['trial']}): using the final fused model's curves {fused_hist}")
+            continue
         f = cache / f"{v}.json"
         if f.exists():
-            curves[v] = json.loads(f.read_text())
-            print(f"[{v}] loaded {f}")
-            continue
+            cached = json.loads(f.read_text())
+            if cached.get("trial") == t["trial"]:
+                curves[v] = cached
+                print(f"[{v}] loaded {f}")
+                continue
+            print(f"[{v}] cached curves are for trial {cached.get('trial')}, need trial {t['trial']}: retraining")
         if ds is None:
             ds = load_fusion_dataset(args.split, args.embeddings_dir, tile_emb_root=args.tile_emb_root)
         print(f"[{v}] training best {v} config (trial {t['trial']}, CV AUROC {t['mean_auroc']:.4f}) "
