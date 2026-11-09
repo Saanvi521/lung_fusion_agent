@@ -74,10 +74,12 @@ SEARCH_SPACE = {
         "max_train_tiles": [256, 512],
     },
     # fitted weights over the 3 single-FM ABMIL networks' cross-fitted predictions (02d);
-    # only searched when --abmil-probs-dir is given. The grid spacing is the one knob: a finer
-    # grid can fit the CV folds more closely, which is also more chance to fit noise.
+    # only searched when --abmil-probs-dir is given. The grid spacing is deliberately NOT
+    # searched: on synthetic data the accept rule took ~0.001-AUROC "gains" between spacings
+    # (near-identical configs have tiny fold-to-fold variance), i.e. pure selection noise. One
+    # fixed spacing means abmil_late gets exactly one trial and nothing to over-tune.
     "abmil_late": {
-        "weight_step": [0.05, 0.1, 0.2],
+        "weight_step": [0.1],
     },
 }
 
