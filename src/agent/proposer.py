@@ -107,6 +107,19 @@ MIL_SEED_CONFIGS: list[dict[str, Any]] = [
 ]
 
 
+def _canonical(config: dict) -> str:
+    """Config identity for duplicate detection, ignoring settings the config doesn't use
+    (e.g. ``weights`` unless combine == "weighted"), so a perturbation of an unused setting
+    isn't counted as a new trial and doesn't spend budget re-running the same model."""
+    c = dict(config)
+    if c.get("family") == "late":
+        if c.get("combine") != "weighted":
+            c.pop("weights", None)
+        if c.get("combine") != "fitted":
+            c.pop("weight_step", None)
+    return json.dumps(c, sort_keys=True)
+
+
 class DeterministicProposer:
     name = "deterministic"
 
@@ -121,10 +134,10 @@ class DeterministicProposer:
     def propose(self, history: list[dict]) -> tuple[dict, str]:
         """Like ``_propose`` but never re-proposes a config that was already evaluated
         (the first version re-ran identical configs, spending trial budget on known answers)."""
-        seen = {json.dumps(h["config"], sort_keys=True) for h in history}
+        seen = {_canonical(h["config"]) for h in history}
         for _ in range(50):
             config, why = self._propose(history)
-            if json.dumps(config, sort_keys=True) not in seen:
+            if _canonical(config) not in seen:
                 return config, why
         return config, why + " (search space around the incumbent exhausted; repeat)"
 
