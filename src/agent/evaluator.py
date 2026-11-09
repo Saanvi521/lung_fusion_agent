@@ -32,6 +32,8 @@ class EvalResult:
     fold_aurocs: list[float]
     fold_bal_accs: list[float]
     n_folds: int
+    # per-fold mixing weights for ``fitted`` late fusion (one list per fold), else None
+    fold_weights: list[list[float]] | None = None
 
 
 def evaluate_config(
@@ -47,7 +49,7 @@ def evaluate_config(
 
     rskf = RepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=seed)
 
-    fold_aurocs, fold_bal_accs = [], []
+    fold_aurocs, fold_bal_accs, fold_weights = [], [], []
     n_classes = len(ds.classes)
 
     for fold_train_local, fold_val_local in rskf.split(trainval_idx, y_trainval):
@@ -57,6 +59,8 @@ def evaluate_config(
         model = build_model(config)
         model.fit(ds, fold_train_idx)
         proba = model.predict_proba(ds, fold_val_idx)
+        if getattr(model, "fitted_weights", None) is not None:
+            fold_weights.append([round(float(w), 4) for w in model.fitted_weights])
         y_true = ds.y[fold_val_idx]
 
         # macro one-vs-rest AUROC needs every class represented in y_true;
@@ -78,5 +82,6 @@ def evaluate_config(
         std_bal_acc=float(np.std(fold_bal_accs)),
         fold_aurocs=fold_aurocs,
         fold_bal_accs=fold_bal_accs,
+        fold_weights=fold_weights or None,
         n_folds=len(fold_bal_accs),
     )

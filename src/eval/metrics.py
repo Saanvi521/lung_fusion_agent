@@ -27,6 +27,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.fusion.data import FusionDataset
 from src.fusion.strategies import LateFusionModel, build_model, make_logreg
+from src.fusion.weights import apply_weights
 
 
 def _macro_auroc(y_true, proba, n_classes) -> float:
@@ -119,7 +120,10 @@ def eval_config(config: dict, ds: FusionDataset, row_name: str, final_seeds: int
     if config["family"] != "mil" or final_seeds <= 1:
         model = build_model(config)
         model.fit(ds, trainval_idx)
-        return _row(row_name, ds, model.predict_proba(ds, test_idx))
+        w = getattr(model, "fitted_weights", None)
+        extra = {"weights": dict(zip(["uni2h", "virchow2", "genbio_pathfm"], [float(x) for x in w]))} \
+            if w is not None else None
+        return _row(row_name, ds, model.predict_proba(ds, test_idx), extra)
 
     y_true = ds.y[test_idx]
     probs, aucs, baccs, folds = [], [], [], []
@@ -187,11 +191,17 @@ class _RowCache:
         if self.folder:
             self.folder.mkdir(parents=True, exist_ok=True)
 
+    def _file(self, name: str) -> Path:
+        return self.folder / (name.replace(" ", "_").replace("/", "-").replace("(", "").replace(")", "") + ".json")
+
+    def has(self, name: str) -> bool:
+        return self.folder is not None and self._file(name).exists()
+
     def __call__(self, name: str, fn, signature=None):
         if self.folder is None:
             return fn()
         sig = json.dumps(signature, sort_keys=True, default=str)
-        f = self.folder / (name.replace(" ", "_").replace("/", "-").replace("(", "").replace(")", "") + ".json")
+        f = self._file(name)
         if f.exists():
             r = json.loads(f.read_text())
             if r.get("_sig", sig) == sig:  # same config as the cached row -> reuse
@@ -213,9 +223,11 @@ def build_comparison_table(agent_best_config: dict, ds: FusionDataset, model_nam
     single_meta = [cached(f"{m}_meta_LR", lambda m=m: eval_lr_single(m, ds, with_meta=True)) for m in model_names]
     rows += single_meta
 
-    if ds.bags is not None:
+    abmil_names = [n for m in model_names for n in (f"{m}_alone_ABMIL", f"{m}_meta_ABMIL")]
+    if ds.bags is not None or all(cached.has(n) for n in abmil_names):
         # same ABMIL family as the fused MIL model, one FM at a time, each with ITS OWN tuned
-        # settings from 02g (per-FM search) -- the single-model counterpart of the agent's search
+        # settings from 02g (per-FM search) -- the single-model counterpart of the agent's search.
+        # Without tile bags these rows can still be read from a previous run's rows/ cache.
         for m in model_names:
             cfg = {"family": "mil", "models": [m], "tuned_single": True}
             from src.mil.config import resolve_hparams
@@ -228,14 +240,19 @@ def build_comparison_table(agent_best_config: dict, ds: FusionDataset, model_nam
             single_meta.append(r)
 
     # identical classifier family: "best single" is chosen among single-FM rows of the SAME
-    # family as the fused winner (ABMIL rows if it is attention-MIL, LR rows otherwise);
-    # the other family's rows stay in the table as context
-    tag = "[ABMIL]" if agent_best_config.get("family") == "mil" else "[LR]"
+    # family as the fused winner (ABMIL rows if it is attention-MIL or ABMIL late fusion, LR rows
+    # otherwise); the other family's rows stay in the table as context
+    tag = "[ABMIL]" if agent_best_config.get("family") in ("mil", "abmil_late") else "[LR]"
     pool = [r for r in single_meta if r["row"].endswith(tag)]
     best_single = max(pool or single_meta, key=lambda r: r["macro_auroc"])
     rows.append({**best_single, "row": f"best single model + metadata ({best_single['row']})"})
-    fused = cached("fused", lambda: eval_config(agent_best_config, ds, "fused (agent-selected) + metadata", final_seeds),
-                   [agent_best_config, final_seeds])
+    if agent_best_config.get("family") == "abmil_late":
+        members = [r for r in single_meta if r["row"].endswith("[ABMIL]")]
+        fused = cached("fused", lambda: eval_abmil_late(agent_best_config, ds, model_names, members),
+                       [agent_best_config, [r["macro_auroc"] for r in members]])
+    else:
+        fused = cached("fused", lambda: eval_config(agent_best_config, ds, "fused (agent-selected) + metadata",
+                                                    final_seeds), [agent_best_config, final_seeds])
     test_idx = np.where(ds.split == "test")[0]
     fused["vs_best_single"] = paired_bootstrap_delta(ds.y[test_idx], fused["_proba"], best_single["_proba"])
     rows.append(fused)
@@ -243,3 +260,35 @@ def build_comparison_table(agent_best_config: dict, ds: FusionDataset, model_nam
     print(f"\n[test] fused - best single: dAUROC {d['delta_auroc_mean']:+.4f} CI {d['delta_auroc_ci']} "
           f"(P[fused<=single]={d['p_fused_not_better_auroc']:.2f}); dBalAcc {d['delta_bacc_mean']:+.4f} CI {d['delta_bacc_ci']}")
     return rows  # caller strips "_proba"/"_curves" before writing JSON
+
+
+def eval_abmil_late(config: dict, ds: FusionDataset, model_names: list[str], member_rows: list[dict]) -> dict:
+    """Final test row for ``abmil_late`` (option B).
+
+    1. Fit the weights on ALL train+val patients, using 02d's out-of-fold ABMIL predictions
+       (no test patient involved).
+    2. Apply them to the test predictions of the "+ metadata [ABMIL]" rows -- the exact networks
+       the single-model baselines in this table use -- so fused vs best single differ only in
+       the weighting. Age/sex enter through those rows' networks.
+    """
+    by_name = {r["row"]: r for r in member_rows}
+    needed = [f"{m} + metadata [ABMIL]" for m in model_names]
+    missing = [n for n in needed if n not in by_name]
+    if missing:
+        raise ValueError(f"abmil_late final evaluation needs the rows {missing}: pass --tile-emb-root "
+                         "or copy rows/ from the run that made them")
+    test_idx = np.where(ds.split == "test")[0]
+    members = [np.asarray(by_name[n]["_proba"]) for n in needed]
+    if any(p.shape[0] != len(test_idx) for p in members):
+        raise ValueError("cached [ABMIL] rows were made on a different set of test patients than this dataset")
+
+    trainval_idx = np.where(np.isin(ds.split, ["train", "val"]))[0]
+    model = build_model(config)
+    model.fit(ds, trainval_idx)
+    w = model.fitted_weights
+    print(f"[test] abmil_late weights (fitted on train+val out-of-fold predictions): "
+          f"{dict(zip(model_names, np.round(w, 3).tolist()))}")
+    extra = {"weights": dict(zip(model_names, [float(x) for x in w])), "members": needed,
+             "headline": "fitted weights (from 02d out-of-fold predictions) applied to the "
+                         "+ metadata [ABMIL] rows' test predictions"}
+    return _row("fused (agent-selected) + metadata", ds, apply_weights(members, w), extra)

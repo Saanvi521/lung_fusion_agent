@@ -35,7 +35,7 @@ class AgentConfig:
     seed: int = 42
     n_cv_splits: int = 5
     n_cv_repeats: int = 3
-    families: tuple = ("early", "late", "learned")
+    families: tuple = ("early", "late", "learned")  # + "mil", "abmil_late" when their inputs are loaded
     mil_cv_repeats: int = 1  # MIL trials are ~100x costlier; the first repeat uses the SAME 5 folds,
                              # so paired comparisons against other families stay valid (on those folds)
 
@@ -88,7 +88,10 @@ def describe(config: dict) -> str:
                 f"ls={config.get('label_smoothing', 0)} tiles={config.get('max_train_tiles', 512)}")
     if f == "late":
         w = f" w={config.get('weights')}" if config.get("combine") == "weighted" else ""
+        w += f" step={config.get('weight_step', 0.1)}" if config.get("combine") == "fitted" else ""
         return f"late:{config.get('combine')}{w} C={config.get('C')}"
+    if f == "abmil_late":
+        return f"abmil_late:fitted step={config.get('weight_step', 0.1)}"
     if f == "early":
         return (f"early:{'L2' if config.get('l2_normalize') else 'noL2'}"
                 f"{' PCA=' + str(config['pca_dim']) if config.get('pca_dim') else ''} C={config.get('C')}")
@@ -96,6 +99,16 @@ def describe(config: dict) -> str:
         return (f"learned hidden={config.get('hidden_dim')} drop={config.get('dropout')} "
                 f"wd={config.get('weight_decay')} epochs={config.get('epochs')}")
     return str(f)
+
+
+def _weights_extra(result: EvalResult) -> dict | None:
+    """For ``fitted`` trials: the weights each CV fold chose (order: uni2h, virchow2,
+    genbio_pathfm) and their mean, so the log shows which models the mix relied on."""
+    if not result.fold_weights:
+        return None
+    return {"weight_order": ["uni2h", "virchow2", "genbio_pathfm"],
+            "fold_weights": result.fold_weights,
+            "mean_weights": [round(float(w), 3) for w in np.mean(result.fold_weights, axis=0)]}
 
 
 class _TrialCache:
@@ -209,12 +222,14 @@ def run_agent(
             accepted=accepted,
             accept_reason=accept_reason,
             incumbent_score=incumbent_result.mean_auroc,
+            extra=_weights_extra(result),
         )
 
         print(
             f"[trial {trial_idx:2d}/{agent_config.max_trials}] {describe(config):<70} "
             f"CV AUROC={result.mean_auroc:.4f}+-{result.std_auroc:.4f} bAcc={result.mean_bal_acc:.3f} "
             f"{'ACCEPTED' if accepted else 'rejected'} (incumbent={incumbent_result.mean_auroc:.4f})"
+            + (f" mean weights={_weights_extra(result)['mean_weights']}" if result.fold_weights else "")
         )
 
         if trials_since_improvement >= agent_config.no_improve_patience:

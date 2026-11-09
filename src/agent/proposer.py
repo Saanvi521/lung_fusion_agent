@@ -36,7 +36,8 @@ SEARCH_SPACE = {
         "C": ["auto", 1e-3, 1e-2, 0.1, 1.0],
     },
     "late": {
-        "combine": ["mean", "logmean", "weighted", "stacking"],
+        # "fitted": one weight per FM chosen on out-of-fold predictions (src/fusion/weights.py)
+        "combine": ["mean", "logmean", "weighted", "stacking", "fitted"],
         # Fix: "weighted" previously had no actual weight values to search
         # over, so config.get("weights") was always None and silently fell
         # back to equal thirds -- mathematically identical to "mean". These
@@ -72,6 +73,12 @@ SEARCH_SPACE = {
         "label_smoothing": [0.0, 0.1],
         "max_train_tiles": [256, 512],
     },
+    # fitted weights over the 3 single-FM ABMIL networks' cross-fitted predictions (02d);
+    # only searched when --abmil-probs-dir is given. The grid spacing is the one knob: a finer
+    # grid can fit the CV folds more closely, which is also more chance to fit noise.
+    "abmil_late": {
+        "weight_step": [0.05, 0.1, 0.2],
+    },
 }
 
 # A fixed initial batch spanning every family, so the very first few trials
@@ -87,7 +94,9 @@ SEED_CONFIGS: list[dict[str, Any]] = [
     # the very first weighted trial is an honest, distinct test.
     {**default_config("late"), "combine": "weighted", "weights": [0.6, 0.2, 0.2]},
     {**default_config("late"), "combine": "stacking"},
+    {**default_config("late"), "combine": "fitted"},
     {**default_config("learned")},
+    {**default_config("abmil_late")},
 ]
 
 # Added to the seed batch only when the mil family is enabled: one per fusion mode.
@@ -186,7 +195,7 @@ class LLMProposer:
             prompt = (
                 "You are tuning a fusion strategy that combines 3 pathology "
                 "foundation-model embeddings + age/sex to predict a 7-class "
-                "lung cancer subtype. Search space (families: early/late/learned) "
+                "lung cancer subtype. Search space "
                 f"is: {json.dumps({f: SEARCH_SPACE[f] for f in self.families})}. Seed configs already tried: "
                 f"{json.dumps(self.fallback.seed_configs)}. Recent trial history (most recent "
                 f"last): {json.dumps(trimmed_history)}. Propose ONE new config as "

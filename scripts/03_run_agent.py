@@ -15,6 +15,10 @@ Usage
         --tile-emb-root <drive>/tile_embeddings \
         --families early late learned mil \
         --out-dir artifacts/agent_run_mil
+
+    # + fitted-weight late fusion over the per-FM ABMIL networks (needs 02d's <fm>_abmil_probs.npz)
+    python -m scripts.03_run_agent ... --abmil-probs-dir <drive>/embeddings_abmil_v3 \
+        --families late mil abmil_late
 """
 from __future__ import annotations
 
@@ -38,8 +42,12 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--tile-emb-root", type=Path, default=None,
                     help="<out-dir>/tile_embeddings from 02b; enables the 'mil' family and ABMIL rows")
-    ap.add_argument("--families", nargs="+", default=None, choices=["early", "late", "learned", "mil"],
-                    help="families the agent may search (default: early late learned [+ mil if bags given])")
+    ap.add_argument("--abmil-probs-dir", type=Path, default=None,
+                    help="folder with 02d's <fm>_abmil_probs.npz files; enables the 'abmil_late' family")
+    ap.add_argument("--families", nargs="+", default=None,
+                    choices=["early", "late", "learned", "mil", "abmil_late"],
+                    help="families the agent may search (default: early late learned "
+                         "[+ mil if bags given] [+ abmil_late if ABMIL probabilities given])")
     ap.add_argument("--mil-cv-repeats", type=int, default=1)
     ap.add_argument("--final-seeds", type=int, default=3, help="independent trainings per MIL row on test")
     args = ap.parse_args()
@@ -47,10 +55,14 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     # Safe to re-run the exact same command after a crash: finished agent trials (trial_cache.jsonl)
     # and finished test rows (rows/) are reloaded, everything else continues where it stopped.
-    ds = load_fusion_dataset(args.split, args.embeddings_dir, tile_emb_root=args.tile_emb_root)
-    families = args.families or (["early", "late", "learned"] + (["mil"] if ds.bags is not None else []))
+    ds = load_fusion_dataset(args.split, args.embeddings_dir, tile_emb_root=args.tile_emb_root,
+                             abmil_probs_dir=args.abmil_probs_dir)
+    families = args.families or (["early", "late", "learned"] + (["mil"] if ds.bags is not None else [])
+                                 + (["abmil_late"] if ds.abmil_probs is not None else []))
     if "mil" in families and ds.bags is None:
         ap.error("--families mil needs --tile-emb-root")
+    if "abmil_late" in families and ds.abmil_probs is None:
+        ap.error("--families abmil_late needs --abmil-probs-dir")
     print(f"[data] {len(ds.patient_ids)} patients loaded, classes={ds.classes}")
 
     agent_cfg = AgentConfig(

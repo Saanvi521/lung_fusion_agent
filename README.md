@@ -49,6 +49,27 @@ its results are kept in `artifacts/agent_run_v2_first_test_look/`. No API key is
 deterministic proposer.
 `scripts/slurm/abmil.sbatch` wraps the same commands for a SLURM cluster.
 
+### v4: fitted-weight late fusion (branch `fitted-late-fusion`)
+
+Adds two fusion options whose mixing weights (one per foundation model, summing to 1) are chosen on
+out-of-fold predictions from a grid that includes "100% one model" (`src/fusion/weights.py`):
+
+- `late` with `combine: fitted`: weights over the 3 mean-pooled logistic regressions (each with age/sex).
+- `abmil_late`: weights over the 3 single-model ABMIL networks, fitted on 02d's out-of-fold predictions
+  (`<fm>_abmil_probs.npz`). On test, the weights are applied to the `+ metadata [ABMIL]` rows, the
+  same networks as the single-model baselines in the table.
+
+Nothing new is trained for `abmil_late`. To reuse v3's finished work, copy its caches into the new run folder first:
+```bash
+mkdir -p $D/agent_run_v4 && cp -r $D/agent_run_v3/trial_cache.jsonl $D/agent_run_v3/rows $D/agent_run_v4/
+export ABMIL_TUNED_DIR=$D/tuned_v3      # must match v3 so the cached [ABMIL] rows are reused, not retrained
+python -m scripts.03_run_agent --split $S --embeddings-dir $D/embeddings --tile-emb-root $D/tile_embeddings \
+    --abmil-probs-dir $D/embeddings_abmil_v3 --families late mil abmil_late \
+    --max-trials 20 --no-improve-patience 8 --final-seeds 3 --out-dir $D/agent_run_v4
+```
+Every trial's chosen weights are written to `decision_log.jsonl` (`fold_weights`, `mean_weights`).
+Synthetic tests: `python -m pytest tests/ -q`.
+
 `notebooks/lung_agent.ipynb` has all of the above as runnable Colab cells in order (Parts 0–8; Part 8 prints the report numbers and packages the results).
 
 ## Repository layout

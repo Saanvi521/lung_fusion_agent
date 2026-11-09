@@ -27,6 +27,10 @@ class FusionDataset:
     classes: list[str]
     split: np.ndarray  # (n_patients,) "train" / "val" / "test"
     bags: dict | None = None  # {pid: {fm: (N_tiles, D)}} -- only when tile bags were loaded (mil family)
+    # {fm: (n_patients, n_classes)} cross-fitted ABMIL class probabilities saved by 02d
+    # (<fm>_abmil_probs.npz): out-of-fold for train+val patients, mean of the 5 fold networks for
+    # test patients. Only loaded with --abmil-probs-dir; used by the ``abmil_late`` family.
+    abmil_probs: dict[str, np.ndarray] | None = None
 
 
 def load_fusion_dataset(
@@ -34,6 +38,7 @@ def load_fusion_dataset(
     embeddings_dir: Path,
     model_names: list[str] = MODEL_NAMES,
     tile_emb_root: Path | None = None,
+    abmil_probs_dir: Path | None = None,
 ) -> FusionDataset:
     df = pd.read_csv(split_csv)
     classes = sorted(df[LABEL_COL].unique().tolist())
@@ -78,6 +83,10 @@ def load_fusion_dataset(
     y = df[LABEL_COL].map(class_to_idx).to_numpy()
     split = df["split"].astype(str).to_numpy()
 
+    abmil_probs = None
+    if abmil_probs_dir is not None:
+        abmil_probs = load_abmil_probs(Path(abmil_probs_dir), model_names, patient_ids, classes)
+
     return FusionDataset(
         patient_ids=patient_ids,
         embeddings=emb_arrays,
@@ -87,4 +96,29 @@ def load_fusion_dataset(
         classes=classes,
         split=split,
         bags=bags,
+        abmil_probs=abmil_probs,
     )
+
+
+def load_abmil_probs(
+    probs_dir: Path, model_names: list[str], patient_ids: list[str], classes: list[str]
+) -> dict[str, np.ndarray]:
+    """Read ``<probs_dir>/<fm>_abmil_probs.npz`` (written by 02d_crossfit_abmil) for every FM and
+    align the rows to ``patient_ids``. Fails loudly if a patient or the class order doesn't match,
+    because a silent misalignment would mix up whose prediction is whose."""
+    out: dict[str, np.ndarray] = {}
+    for m in model_names:
+        f = probs_dir / f"{m}_abmil_probs.npz"
+        if not f.exists():
+            raise FileNotFoundError(f"{f} not found -- run 02d_crossfit_abmil for {m} first")
+        z = np.load(f, allow_pickle=False)
+        npz_classes = [str(c) for c in z["classes"]]
+        if npz_classes != classes:
+            raise ValueError(f"{f}: class order {npz_classes} != dataset class order {classes}")
+        row = {str(p): i for i, p in enumerate(z["pids"])}
+        missing = [p for p in patient_ids if p not in row]
+        if missing:
+            raise ValueError(f"{f} has no prediction for {len(missing)} patients, e.g. {missing[:3]}")
+        out[m] = z["probs"][[row[p] for p in patient_ids]].astype(np.float64)
+    print(f"[data] loaded cross-fitted ABMIL probabilities for {model_names} from {probs_dir}")
+    return out

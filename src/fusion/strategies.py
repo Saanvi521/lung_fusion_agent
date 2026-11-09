@@ -11,7 +11,10 @@ Three families, matching the brief's minimum viable scope:
            + metadata, then one classifier on the combined vector.
 - late:    train a separate classifier per model (+ metadata on each), then
            combine their predicted probabilities (mean / weighted / a
-           small stacking meta-classifier).
+           small stacking meta-classifier / ``fitted`` weights chosen on
+           out-of-fold predictions, see src/fusion/weights.py).
+- abmil_late: ``fitted`` weights over the three single-FM ABMIL networks'
+           predictions (cross-fitted by 02d). Needs --abmil-probs-dir.
 - learned: a small gated-fusion network that learns, per patient, how much
            to trust each model's stream before classifying.
 - mil:     attention-MIL fusion on the TILE bags of all FMs (src/mil): the FMs are
@@ -44,6 +47,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler, normalize
 
 from src.fusion.data import FusionDataset
+from src.fusion.weights import apply_weights, fit_simplex_weights
 
 # sklearn >=1.8 emits FutureWarnings for LogisticRegressionCV's default arguments on every fit
 warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
@@ -78,9 +82,15 @@ def default_config(family: str) -> dict[str, Any]:
     if family == "late":
         return {
             "family": "late",
-            "combine": "mean",  # "mean" | "logmean" | "weighted" | "stacking"
+            "combine": "mean",  # "mean" | "logmean" | "weighted" | "stacking" | "fitted"
             "weights": None,  # only used if combine == "weighted"
+            "weight_step": 0.1,  # only used if combine == "fitted": grid spacing of the weights
             "C": "auto",
+        }
+    if family == "abmil_late":
+        return {
+            "family": "abmil_late",
+            "weight_step": 0.1,
         }
     if family == "learned":
         return {
@@ -176,6 +186,7 @@ class LateFusionModel:
     scalers: dict[str, StandardScaler] = field(default_factory=dict)
     age_scaler: StandardScaler | None = None
     stacker: LogisticRegression | None = None
+    fitted_weights: np.ndarray | None = None  # set by combine == "fitted"
 
     def _fit_one_model(self, ds: FusionDataset, m: str, train_idx: np.ndarray) -> None:
         X = ds.embeddings[m][train_idx]
@@ -193,37 +204,49 @@ class LateFusionModel:
         X = np.concatenate([X, meta], axis=1)
         return self.per_model_clf[m].predict_proba(X)
 
+    def _oof_probs(self, ds: FusionDataset, train_idx: np.ndarray) -> dict[str, np.ndarray]:
+        """Out-of-fold class probabilities of each per-model classifier on ``train_idx``.
+
+        Fix (stacking): the combiner's training inputs must come from OUT-OF-FOLD predictions,
+        not in-sample ones. The per-model classifiers are fit on ALL of train_idx, so asking
+        them to predict on that same train_idx gives artificially confident/accurate
+        probabilities -- nothing like what they produce on unseen patients at test time. A
+        combiner trained on those learns a rule for inputs it will never see again (why
+        "stacking" scored worst in the first real run). Inner 5-fold cross-validated
+        predictions match train-time inputs to test-time conditions. Used by both
+        ``stacking`` and ``fitted``.
+        """
+        y_train = ds.y[train_idx]
+        n_classes = len(ds.classes)
+        oof = {m: np.zeros((len(train_idx), n_classes)) for m in MODEL_NAMES}
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        for fold_tr_local, fold_val_local in skf.split(train_idx, y_train):
+            fold_tr_idx = train_idx[fold_tr_local]
+            fold_val_idx = train_idx[fold_val_local]
+            for m in MODEL_NAMES:
+                fold_model = LateFusionModel(config=self.config)
+                fold_model._fit_one_model(ds, m, fold_tr_idx)
+                oof[m][fold_val_local] = fold_model._proba_one_model(ds, m, fold_val_idx)
+        return oof
+
     def fit(self, ds: FusionDataset, train_idx: np.ndarray) -> None:
         for m in MODEL_NAMES:
             self._fit_one_model(ds, m, train_idx)
 
-        if self.config.get("combine") == "stacking":
-            # Fix: the meta-classifier's training features must come from
-            # OUT-OF-FOLD predictions, not in-sample ones. The per-model
-            # classifiers above were just fit on ALL of train_idx, so asking
-            # them to predict on that same train_idx gives artificially
-            # confident/accurate probabilities -- nothing like what they'll
-            # actually produce on unseen patients at test time. Training the
-            # stacker on those in-sample probabilities teaches it a
-            # combination rule for inputs it will never see again, which is
-            # almost certainly why "stacking" scored worst of all 3 combine
-            # options in the real run. Building 5-fold cross-validated
-            # out-of-fold predictions instead matches train-time features to
-            # test-time conditions, the standard fix for stacking leakage.
+        combine = self.config.get("combine")
+        if combine in ("stacking", "fitted"):
+            oof = self._oof_probs(ds, train_idx)
             y_train = ds.y[train_idx]
-            n_classes = len(ds.classes)
-            oof_probs = {m: np.zeros((len(train_idx), n_classes)) for m in MODEL_NAMES}
-            skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-            for fold_tr_local, fold_val_local in skf.split(train_idx, y_train):
-                fold_tr_idx = train_idx[fold_tr_local]
-                fold_val_idx = train_idx[fold_val_local]
-                for m in MODEL_NAMES:
-                    fold_model = LateFusionModel(config=self.config)
-                    fold_model._fit_one_model(ds, m, fold_tr_idx)
-                    oof_probs[m][fold_val_local] = fold_model._proba_one_model(ds, m, fold_val_idx)
+        if combine == "stacking":
             meta, _ = _metadata_matrix(ds, train_idx, self.age_scaler, fit=False)
-            X_stack = np.concatenate([oof_probs[m] for m in MODEL_NAMES] + [meta], axis=1)
+            X_stack = np.concatenate([oof[m] for m in MODEL_NAMES] + [meta], axis=1)
             self.stacker = LogisticRegression(max_iter=2000, class_weight="balanced").fit(X_stack, y_train)
+        if combine == "fitted":
+            # one weight per FM, chosen on the out-of-fold predictions only (age/sex are already
+            # inside every member classifier, so the mix uses them whatever the weights)
+            self.fitted_weights, _ = fit_simplex_weights(
+                [oof[m] for m in MODEL_NAMES], y_train, len(ds.classes), step=float(self.config.get("weight_step", 0.1))
+            )
 
     def predict_proba(self, ds: FusionDataset, idx: np.ndarray) -> np.ndarray:
         probs = [self._proba_one_model(ds, m, idx) for m in MODEL_NAMES]
@@ -247,7 +270,54 @@ class LateFusionModel:
             meta, _ = _metadata_matrix(ds, idx, self.age_scaler, fit=False)
             X_stack = np.concatenate(probs + [meta], axis=1)
             return self.stacker.predict_proba(X_stack)
+        if combine == "fitted":
+            return apply_weights(probs, self.fitted_weights)
         raise ValueError(f"unknown combine: {combine}")
+
+
+# ---------------------------------------------------------------------------
+# ABMIL late fusion with fitted weights
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ABMILLateFusionModel:
+    """Weighted average of the three single-FM ABMIL networks' predictions, with the weights
+    chosen by ``fit_simplex_weights``.
+
+    Nothing is trained here: the member predictions are the cross-fitted ABMIL probabilities
+    from 02d (``ds.abmil_probs``), which are out-of-fold for every train+val patient. So the
+    weights for a CV fold are fitted on its training patients' out-of-fold predictions and
+    scored on its held-out patients' out-of-fold predictions.
+
+    Leakage note: the 02d folds differ from the agent's CV folds, so a training patient's
+    prediction can come from a network that saw some of this fold's held-out patients. Only
+    ~2 free numbers are fitted on those predictions, so the effect on the CV score is small,
+    and the test set is unaffected.
+
+    Final test model (option B, see src/eval/metrics.py): the weights fitted on all train+val
+    are applied to the "+ metadata [ABMIL]" rows' test predictions, i.e. the same networks the
+    single-model baselines in the table use. ``predict_proba`` on test patients here returns
+    the 02d-network version instead (used only as a context row).
+    """
+
+    config: dict[str, Any]
+    fitted_weights: np.ndarray | None = None
+
+    def _members(self, ds: FusionDataset, idx: np.ndarray) -> list[np.ndarray]:
+        if ds.abmil_probs is None:
+            raise ValueError("abmil_late needs 02d's ABMIL probabilities: pass --abmil-probs-dir")
+        return [ds.abmil_probs[m][idx] for m in MODEL_NAMES]
+
+    def fit(self, ds: FusionDataset, train_idx: np.ndarray) -> None:
+        if np.any(ds.split[train_idx] == "test"):
+            raise ValueError("abmil_late must only be fitted on train/val patients")
+        self.fitted_weights, _ = fit_simplex_weights(
+            self._members(ds, train_idx), ds.y[train_idx], len(ds.classes),
+            step=float(self.config.get("weight_step", 0.1)),
+        )
+
+    def predict_proba(self, ds: FusionDataset, idx: np.ndarray) -> np.ndarray:
+        return apply_weights(self._members(ds, idx), self.fitted_weights)
 
 
 # ---------------------------------------------------------------------------
@@ -421,4 +491,6 @@ def build_model(config: dict[str, Any]):
         return LateFusionModel(config=config)
     if family == "learned":
         return LearnedFusionModel(config=config)
+    if family == "abmil_late":
+        return ABMILLateFusionModel(config=config)
     raise ValueError(f"unknown family: {family}")

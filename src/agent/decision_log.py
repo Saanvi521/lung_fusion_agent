@@ -31,6 +31,7 @@ class DecisionLog:
         accepted: bool,
         accept_reason: str,
         incumbent_score: float,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         record = {
             "trial": trial_idx,
@@ -44,6 +45,7 @@ class DecisionLog:
             "accepted": accepted,
             "accept_reason": accept_reason,
             "incumbent_score_after": incumbent_score,
+            **(extra or {}),
         }
         with open(self.path, "a") as f:
             f.write(json.dumps(record) + "\n")
